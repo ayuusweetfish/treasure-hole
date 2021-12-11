@@ -75,7 +75,7 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
 
     eprintln!("page {}; count {}", page, pids.len());
     // XXX: debug use
-    if page >= 3 { break; }
+    if page >= 1 { break; }
   }
 
   Ok(pids)
@@ -158,18 +158,24 @@ async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
   let mut f = std::fs::File::create("data.js")?;
   f.write_all("const posts = [\n".as_bytes())?;
 
-  let ref_pids = fetch_and_save_posts(client, &attn_pids, &mut f).await?;
-  
   // Deduplication
   let mut fetched_pids = std::collections::HashSet::new();
-  fetched_pids.extend(attn_pids);
 
-  let ref_pids = ref_pids.iter()
-    .copied()
-    .filter(|pid| !fetched_pids.contains(pid))
-    .collect::<Vec<_>>();
-  eprintln!("referenced: {:?}", ref_pids);
-  fetch_and_save_posts(client, &ref_pids, &mut f).await?;
+  fetched_pids.extend(attn_pids.iter().copied());
+  let mut ref_pids = fetch_and_save_posts(client, &attn_pids, &mut f).await?;
+  
+  // Delimiter to denote 'reachable by references'
+  f.write_all("'---',\n".as_bytes())?;
+
+  for _ in 0..2 {
+    ref_pids = ref_pids.iter()
+      .copied()
+      .filter(|pid| !fetched_pids.contains(pid))
+      .collect::<Vec<_>>();
+    fetched_pids.extend(attn_pids.iter().copied());
+    eprintln!("referenced: {:?}", ref_pids);
+    ref_pids = fetch_and_save_posts(client, &ref_pids, &mut f).await?;
+  }
 
   f.write_all("];\n".as_bytes())?;
 

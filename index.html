@@ -38,6 +38,12 @@
     left: calc(-50% - 1em);
     text-align: right;
   }
+  .post-ref-hint {
+    position: absolute;
+    margin-top: 6px;
+    left: calc(100% + 1em);
+    color: #606060;
+  }
   .post-header {
     margin-bottom: 6px;
   }
@@ -116,6 +122,7 @@
     跳转
     <a class='link-next' title='下一篇' href='#'>↓</a>
   </div>
+  <div class='post-ref-hint' title='由其他帖子引用，并非关注'>※</div>
   <div class='post-header'>
     <span class='post-id'></span><!--
     --><span class='post-timestamp'></span>
@@ -171,7 +178,32 @@ const md = window.markdownit({
   inline: true,
 });
 
+let reachedByRefDelim = posts.indexOf('---');
+posts.splice(reachedByRefDelim, 1); // Remove the delimiter
+
 let i = 0;
+
+const linkReferences = (content) => {
+  for (const el of content.childNodes) {
+    if (el.nodeType === Node.TEXT_NODE) {
+      // Process references
+      const parts = el.textContent.split(/(?=#\d+)|(?<=#\d+)(?=\D)/g);
+      const newEl = document.createElement('span');
+      for (const s of parts)
+        if (s.match(/^#\d+$/g)) {
+          const linkNode = document.createElement('a');
+          linkNode.href = `#post-${s.substring(1)}`;
+          linkNode.textContent = s;
+          newEl.appendChild(linkNode);
+        } else {
+          const textNode = document.createTextNode(s);
+          newEl.appendChild(textNode);
+        }
+      el.replaceWith(newEl);
+    }
+  }
+};
+
 for (const p of posts) {
   const postEl = template.post.cloneNode(true);
   listEl.appendChild(postEl);
@@ -181,6 +213,7 @@ for (const p of posts) {
   postEl.querySelector('.post-stats').innerText =
     `${p.post.likenum} 关注，${p.post.reply} 回复`;
   postEl.querySelector('.post-content').innerHTML = md.renderInline(p.post.text);
+  linkReferences(postEl.querySelector('.post-content'));
   if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
   else postEl.querySelector('.link-prev').href = `#post-${posts[i - 1].post.pid}`;
   if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
@@ -188,8 +221,10 @@ for (const p of posts) {
   const imgEl = postEl.querySelector('img');
   if (p.post.type === 'image') imgEl.src = p.post.url.split('/').pop();
   else imgEl.remove();
-  const repliesEl = postEl.querySelector('.replies');
 
+  if (i < reachedByRefDelim) postEl.querySelector('.post-ref-hint').remove();
+
+  const repliesEl = postEl.querySelector('.replies');
   const replyAuthorName = {};
 
   for (const reply of p.data) {
@@ -204,6 +239,7 @@ for (const p of posts) {
         ` <a class='reply-to' href='#reply-${reply.reply_to}'>→ ${replyAuthorName[reply.reply_to]}</a>`;
     }
     replyEl.querySelector('.post-content').innerHTML = md.renderInline(reply.text);
+    linkReferences(replyEl.querySelector('.post-content'));
     const imgEl = replyEl.querySelector('img');
     if (reply.type === 'image') imgEl.src = reply.url.split('/').pop();
     else imgEl.remove();
