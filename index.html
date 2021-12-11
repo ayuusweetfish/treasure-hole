@@ -6,6 +6,10 @@
 </head>
 <body>
 <style>
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     margin: 20px 0;
     color: #222;
@@ -63,6 +67,8 @@
   }
   .reply-author .reply-to {
     font-weight: normal;
+    color: #606060;
+    text-decoration: none;
   }
 
   .post img {
@@ -70,7 +76,7 @@
     width: 100%;
   }
 
-  .post-anchor {
+  .anchor {
     position: relative;
     width: 0;
     height: 0;
@@ -80,7 +86,7 @@
     color: #606060;
   }
   .post-links a {
-    color: #48f;
+    color: #606060;
     text-decoration: none;
   }
   .post-links a.disabled {
@@ -94,11 +100,11 @@
 
 <div id='template' style='display: none'>
 <div class='post'>
-  <div class='post-anchor'></div>
+  <div class='anchor'></div>
   <div class='post-links'>
-    <a class='link-prev' href='#'>↑</a>
-    帖子
-    <a class='link-next' href='#'>↓</a>
+    <a class='link-prev' title='上一篇' href='#'>↑</a>
+    跳转
+    <a class='link-next' title='下一篇' href='#'>↓</a>
   </div>
   <div class='post-header'>
     <span class='post-id'></span><!--
@@ -115,6 +121,7 @@
 
 <div class='reply'>
   <div class='divider'></div>
+  <div class='anchor'></div>
   <div class='reply-title'>
     <div class='post-header'>
       <span class='reply-author'></span><!--
@@ -152,7 +159,7 @@ let i = 0;
 for (const p of posts) {
   const postEl = template.post.cloneNode(true);
   listEl.appendChild(postEl);
-  postEl.querySelector('.post-anchor').id = `post-${i}`;
+  postEl.querySelector('.anchor').id = `post-${i}`;
   postEl.querySelector('.post-id').innerText = '#' + p.post.pid;
   postEl.querySelector('.post-timestamp').innerText = (new Date(p.post.timestamp*1000)).toLocaleString();
   postEl.querySelector('.post-stats').innerText =
@@ -167,16 +174,25 @@ for (const p of posts) {
   else imgEl.remove();
   const repliesEl = postEl.querySelector('.replies');
 
+  const replyAuthorName = {};
+
   for (const reply of p.data) {
     const replyEl = template.reply.cloneNode(true);
     repliesEl.appendChild(replyEl);
+    replyEl.querySelector('.anchor').id = `reply-${reply.cid}`;
     replyEl.querySelector('.post-id').innerText = '#' + reply.cid;
     replyEl.querySelector('.post-timestamp').innerText = (new Date(reply.timestamp*1000)).toLocaleString();
-    replyEl.querySelector('.reply-author').innerText = 'Alice';
+    replyEl.querySelector('.reply-author').innerText = reply.name;
+    if (reply.reply_to !== -1) {
+      replyEl.querySelector('.reply-author').innerHTML +=
+        ` <a class='reply-to' href='#reply-${reply.reply_to}'>→ ${replyAuthorName[reply.reply_to]}</a>`;
+    }
     replyEl.querySelector('.post-content').innerText = reply.text;
     const imgEl = replyEl.querySelector('img');
     if (reply.type === 'image') imgEl.src = reply.url.split('/').pop();
     else imgEl.remove();
+
+    replyAuthorName[reply.cid] = reply.name;
   }
 
   i++;
