@@ -3,6 +3,7 @@
 <head>
   <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
   <title>Treasure hole</title>
+  <script src="https://cdn.bootcdn.net/ajax/libs/markdown-it/12.1.0/markdown-it.min.js"></script>
 </head>
 <body>
 <style>
@@ -44,6 +45,9 @@
     background: #f8f7f6;
     border-top: 2px solid #f0f0f0;
     padding: 4px 8px;
+    margin-left: -8px;
+    margin-right: -8px;
+    margin-bottom: 10px;
   }
   .post-id {
     font-weight: bold;
@@ -160,20 +164,27 @@ const template = {
   reply: document.querySelector('#template .reply'),
 };
 
+const md = window.markdownit({
+  html: false,
+  linkify: false,
+  breaks: true,
+  inline: true,
+});
+
 let i = 0;
 for (const p of posts) {
   const postEl = template.post.cloneNode(true);
   listEl.appendChild(postEl);
-  postEl.querySelector('.anchor').id = `post-${i}`;
+  postEl.querySelector('.anchor').id = `post-${p.post.pid}`;
   postEl.querySelector('.post-id').innerText = '#' + p.post.pid;
   postEl.querySelector('.post-timestamp').innerText = (new Date(p.post.timestamp*1000)).toLocaleString();
   postEl.querySelector('.post-stats').innerText =
     `${p.post.likenum} 关注，${p.post.reply} 回复`;
-  postEl.querySelector('.post-content').innerText = p.post.text;
-  postEl.querySelector('.link-prev').href = `#post-${i-1}`;
-  postEl.querySelector('.link-next').href = `#post-${i+1}`;
+  postEl.querySelector('.post-content').innerHTML = md.renderInline(p.post.text);
   if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
+  else postEl.querySelector('.link-prev').href = `#post-${posts[i - 1].post.pid}`;
   if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
+  else postEl.querySelector('.link-next').href = `#post-${posts[i + 1].post.pid}`;
   const imgEl = postEl.querySelector('img');
   if (p.post.type === 'image') imgEl.src = p.post.url.split('/').pop();
   else imgEl.remove();
@@ -192,7 +203,7 @@ for (const p of posts) {
       replyEl.querySelector('.reply-author').innerHTML +=
         ` <a class='reply-to' href='#reply-${reply.reply_to}'>→ ${replyAuthorName[reply.reply_to]}</a>`;
     }
-    replyEl.querySelector('.post-content').innerText = reply.text;
+    replyEl.querySelector('.post-content').innerHTML = md.renderInline(reply.text);
     const imgEl = replyEl.querySelector('img');
     if (reply.type === 'image') imgEl.src = reply.url.split('/').pop();
     else imgEl.remove();
