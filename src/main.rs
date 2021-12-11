@@ -93,17 +93,18 @@ async fn fetch_and_save_image(client: &reqwest::Client, url: &str) -> DynResult 
   Ok(())
 }
 
-async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
-  let attn_pids = fetch_attn_pids(&client).await?;
-  // println!("{:?}", attn_pids);
-
-  let mut f = std::fs::File::create("data.js")?;
-  f.write_all("const posts = [\n".as_bytes())?;
-  
+async fn fetch_and_save_posts(
+  client: &reqwest::Client,
+  pids: &[u64],
+  f: &mut std::fs::File,
+) -> DynResult<Vec<u64>> {
   let mut images = vec![];
+  let mut ref_pids = vec![];
+
+  let re_post_ref = regex::Regex::new(r"#(\d{1,})").unwrap();
 
   // Fetch each post and write to file
-  for pid_chunk in attn_pids.chunks(10) {
+  for pid_chunk in pids.chunks(10) {
     let text_futs = pid_chunk.iter().map(|&pid| {
       eprintln!("{}", pid);
       let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
@@ -132,12 +133,45 @@ async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
           images.push(image_url.clone());
         }
       }
+
+      // Look for post references
+      // Post
+      let post_text = expect_json_type!(post.get("text"), Option String);
+      for cap in re_post_ref.captures_iter(post_text) {
+        if let Ok(id) = cap[1].parse::<u64>() {
+          ref_pids.push(id);
+        }
+      }
     }
   }
-  f.write_all("];\n".as_bytes())?;
 
   let image_futs = images.iter().map(|image_url| fetch_and_save_image(client, &image_url));
   futures::future::try_join_all(image_futs).await?;
+
+  Ok(ref_pids)
+}
+
+async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
+  let attn_pids = fetch_attn_pids(&client).await?;
+  // println!("{:?}", attn_pids);
+
+  let mut f = std::fs::File::create("data.js")?;
+  f.write_all("const posts = [\n".as_bytes())?;
+
+  let ref_pids = fetch_and_save_posts(client, &attn_pids, &mut f).await?;
+  
+  // Deduplication
+  let mut fetched_pids = std::collections::HashSet::new();
+  fetched_pids.extend(attn_pids);
+
+  let ref_pids = ref_pids.iter()
+    .copied()
+    .filter(|pid| !fetched_pids.contains(pid))
+    .collect::<Vec<_>>();
+  eprintln!("referenced: {:?}", ref_pids);
+  fetch_and_save_posts(client, &ref_pids, &mut f).await?;
+
+  f.write_all("];\n".as_bytes())?;
 
   Ok(())
 }
