@@ -81,13 +81,20 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
   Ok(pids)
 }
 
-async fn fetch_and_save_image(client: &reqwest::Client, url: &str) -> DynResult {
+async fn fetch_and_save_image(
+  client: &reqwest::Client,
+  url: &str,
+  wd: &std::path::Path,
+) -> DynResult {
   eprintln!("fetch image {}", url);
   let url = format!("https://i.thuhole.com/{}", url);
   let bytes = fetch_bytes(client, &url).await?;
 
   let paths = url.split('/').collect::<Vec<_>>();
-  let mut f = std::fs::File::create(&paths.last().unwrap())?;
+  let mut wd_path = std::path::PathBuf::from(wd);
+  wd_path.push("images");
+  wd_path.push(paths.last().unwrap());
+  let mut f = std::fs::File::create(&wd_path)?;
   f.write_all(&bytes)?;
 
   Ok(())
@@ -97,6 +104,7 @@ async fn fetch_and_save_posts(
   client: &reqwest::Client,
   pids: &[u64],
   f: &mut std::fs::File,
+  wd: &std::path::Path,
 ) -> DynResult<Vec<u64>> {
   let mut images = vec![];
   let mut ref_pids = vec![];
@@ -145,24 +153,35 @@ async fn fetch_and_save_posts(
     }
   }
 
-  let image_futs = images.iter().map(|image_url| fetch_and_save_image(client, &image_url));
+  let image_futs = images.iter().map(|image_url|
+    fetch_and_save_image(client, &image_url, wd));
   futures::future::try_join_all(image_futs).await?;
 
   Ok(ref_pids)
 }
 
-async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
+async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynResult {
   let attn_pids = fetch_attn_pids(&client).await?;
   // println!("{:?}", attn_pids);
 
-  let mut f = std::fs::File::create("data.js")?;
+  std::fs::create_dir(wd)?;
+
+  let mut wd_path = std::path::PathBuf::from(wd);
+  wd_path.push("data.js");
+  println!("data: {:?}", wd_path);
+  let mut f = std::fs::File::create(wd_path)?;
   f.write_all("const posts = [\n".as_bytes())?;
+
+  let mut img_wd_path = std::path::PathBuf::from(wd);
+  img_wd_path.push("images");
+  println!("images: {:?}", img_wd_path);
+  std::fs::create_dir(img_wd_path)?;
 
   // Deduplication
   let mut fetched_pids = std::collections::HashSet::new();
 
   fetched_pids.extend(attn_pids.iter().copied());
-  let mut ref_pids = fetch_and_save_posts(client, &attn_pids, &mut f).await?;
+  let mut ref_pids = fetch_and_save_posts(client, &attn_pids, &mut f, wd).await?;
   
   // Delimiter to denote 'reachable by references'
   f.write_all("'---',\n".as_bytes())?;
@@ -174,10 +193,17 @@ async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
       .collect::<Vec<_>>();
     fetched_pids.extend(attn_pids.iter().copied());
     eprintln!("referenced: {:?}", ref_pids);
-    ref_pids = fetch_and_save_posts(client, &ref_pids, &mut f).await?;
+    ref_pids = fetch_and_save_posts(client, &ref_pids, &mut f, wd).await?;
   }
 
   f.write_all("];\n".as_bytes())?;
+
+  // Write HTML
+  let mut html_wd_path = std::path::PathBuf::from(wd);
+  html_wd_path.push("index.html");
+  println!("page: {:?}", html_wd_path);
+  let mut f = std::fs::File::create(html_wd_path)?;
+  f.write_all(include_bytes!("../index.html"))?;
 
   Ok(())
 }
@@ -189,7 +215,8 @@ async fn main() -> DynResult {
     .build()?;
 
   // let post = fetch("https://tapi.thuhole.com/v3/contents/post/detail?pid=595301");
-  fetch_attn_all(&client).await?;
+  let path = std::path::Path::new("./test1");
+  fetch_attn_all(&client, path).await?;
 
   Ok(())
 }

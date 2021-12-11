@@ -219,7 +219,7 @@ for (const p of posts) {
   if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
   else postEl.querySelector('.link-next').href = `#post-${posts[i + 1].post.pid}`;
   const imgEl = postEl.querySelector('img');
-  if (p.post.type === 'image') imgEl.src = p.post.url.split('/').pop();
+  if (p.post.type === 'image') imgEl.src = 'images/' + p.post.url.split('/').pop();
   else imgEl.remove();
 
   if (i < reachedByRefDelim) postEl.querySelector('.post-ref-hint').remove();
@@ -241,7 +241,7 @@ for (const p of posts) {
     replyEl.querySelector('.post-content').innerHTML = md.renderInline(reply.text);
     linkReferences(replyEl.querySelector('.post-content'));
     const imgEl = replyEl.querySelector('img');
-    if (reply.type === 'image') imgEl.src = reply.url.split('/').pop();
+    if (reply.type === 'image') imgEl.src = 'images/' + reply.url.split('/').pop();
     else imgEl.remove();
 
     replyAuthorName[reply.cid] = reply.name;
