@@ -58,14 +58,16 @@ macro_rules! expect_json_type {
   ($value:expr, Option $variant:tt) => {
     match $value {
       Some(serde_json::Value::$variant(x)) => x,
-      _ => return Err(Box::new(StringError::from("Incorrect JSON format"))),
+      _ => return Err(Box::new(StringError::from(
+        format!("Incorrect JSON format (line {})", line!())))),
     }
   };
   // Direct types
   ($value:expr, $variant:tt) => {
     match $value {
       serde_json::Value::$variant(x) => x,
-      _ => return Err(Box::new(StringError::from("Incorrect JSON format"))),
+      _ => return Err(Box::new(StringError::from(
+        format!("Incorrect JSON format (line {})", line!())))),
     }
   };
 }
@@ -152,8 +154,28 @@ async fn fetch_and_save_posts(
     let results = futures::future::try_join_all(text_futs).await?;
 
     for (post_text, post_json) in results {
+      // Error?
+      let code = expect_json_type!(post_json.get("code"), Option Number).as_i64();
+      match code {
+        Some(-101) => {
+          eprintln!("Skipping (message: {})",
+            expect_json_type!(post_json.get("msg"), Option String)
+          );
+          continue;
+        },
+        Some(code) if code != 0 => {
+          return Err(Box::new(StringError::from(format!(
+            "Incorrect code {}; message {}", code,
+            expect_json_type!(post_json.get("msg"), Option String)
+          ))));
+        },
+        None => return Err(Box::new(StringError::from("Incorrect JSON format"))),
+        _ => {},
+      }
+
       f.write_all(post_text.as_bytes())?;
       f.write_all(",\n".as_bytes())?;
+      f.flush()?;
 
       // Look for image contents
       // Post
