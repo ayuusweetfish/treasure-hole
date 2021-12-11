@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  <title>Treasure hole</title>
+</head>
+<body>
+<style>
+  body {
+    margin: 20px 0;
+    color: #222;
+    background: #fffefd;
+  }
+
+  .divider {
+    margin: 12px 0;
+    height: 0px;
+    border-top: 2px solid #f0f0f0;
+  }
+  .heavy-divider {
+    margin: 12px 0;
+    height: 0px;
+    border-top: 2px solid #606060;
+  }
+
+  .post {
+    margin: 18px 0;
+  }
+  .post-links {
+    position: absolute;
+    width: 50%;
+    left: calc(-50% - 1em);
+    text-align: right;
+  }
+  .post-header {
+    margin-bottom: 6px;
+  }
+  .post-id {
+    font-weight: bold;
+  }
+  .reply-title .post-id {
+    color: #bbb;
+    font-weight: normal;
+    float: right;
+  }
+  .post-timestamp {
+    color: #bbb;
+    font-weight: normal;
+    margin-left: 1em;
+  }
+  .post-stats {
+    color: #bbb;
+    font-weight: normal;
+    float: right;
+  }
+  .post-content {
+    font-weight: normal;
+    color: #222;
+    word-break: break-word;
+  }
+  .reply-author {
+    font-weight: bold;
+  }
+  .reply-author .reply-to {
+    font-weight: normal;
+  }
+
+  .post img {
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .post-anchor {
+    position: relative;
+    width: 0;
+    height: 0;
+    top: -24px;
+  }
+  .post-links {
+    color: #606060;
+  }
+  .post-links a {
+    color: #48f;
+    text-decoration: none;
+  }
+  .post-links a.disabled {
+    color: #bbb;
+    pointer-events: none;
+  }
+</style>
+
+<div id='list' style='position: relative; left: 20%; width: 60%'>
+</div>
+
+<div id='template' style='display: none'>
+<div class='post'>
+  <div class='post-anchor'></div>
+  <div class='post-links'>
+    <a class='link-prev' href='#'>↑</a>
+    帖子
+    <a class='link-next' href='#'>↓</a>
+  </div>
+  <div class='post-header'>
+    <span class='post-id'></span><!--
+    --><span class='post-timestamp'></span>
+    <span class='post-stats'></span>
+  </div>
+  <div class='post-content'>
+  </div>
+  <img>
+  <div class='replies'>
+  </div>
+  <div class='heavy-divider'></div>
+</div>
+
+<div class='reply'>
+  <div class='divider'></div>
+  <div class='reply-title'>
+    <div class='post-header'>
+      <span class='reply-author'></span><!--
+      --><span class='post-timestamp'></span>
+      <span class='post-id'></span>
+    </div>
+  </div>
+  <div class='post-content'>
+  </div>
+  <img>
+</div>
+
+<div class='divider'></div>
+<div class='reply-title'>
+  <div class='post-header'>
+    <span class='reply-author'>洞主 <span class='reply-to'>→ Bob</span></span>
+    <span class='post-timestamp'>2021-12-03 20:38:15</span>
+    <span class='post-id'>#3095774</span>
+  </div>
+</div>
+<div class='post-content'>
+  Re Bob: 正在做牌子，那到时候来C楼北边门口见吧
+</div>
+</div>
+
+<script src='data.js'></script>
+<script>
+const listEl = document.getElementById('list');
+const template = {
+  post: document.querySelector('#template .post'),
+  reply: document.querySelector('#template .reply'),
+};
+
+let i = 0;
+for (const p of posts) {
+  const postEl = template.post.cloneNode(true);
+  listEl.appendChild(postEl);
+  postEl.querySelector('.post-anchor').id = `post-${i}`;
+  postEl.querySelector('.post-id').innerText = '#' + p.post.pid;
+  postEl.querySelector('.post-timestamp').innerText = (new Date(p.post.timestamp*1000)).toLocaleString();
+  postEl.querySelector('.post-stats').innerText =
+    `${p.post.likenum} 关注，${p.post.reply} 回复`;
+  postEl.querySelector('.post-content').innerText = p.post.text;
+  postEl.querySelector('.link-prev').href = `#post-${i-1}`;
+  postEl.querySelector('.link-next').href = `#post-${i+1}`;
+  if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
+  if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
+  const imgEl = postEl.querySelector('img');
+  if (p.post.type === 'image') imgEl.src = p.post.url.split('/').pop();
+  else imgEl.remove();
+  const repliesEl = postEl.querySelector('.replies');
+
+  for (const reply of p.data) {
+    const replyEl = template.reply.cloneNode(true);
+    repliesEl.appendChild(replyEl);
+    replyEl.querySelector('.post-id').innerText = '#' + reply.cid;
+    replyEl.querySelector('.post-timestamp').innerText = (new Date(reply.timestamp*1000)).toLocaleString();
+    replyEl.querySelector('.reply-author').innerText = 'Alice';
+    replyEl.querySelector('.post-content').innerText = reply.text;
+    const imgEl = replyEl.querySelector('img');
+    if (reply.type === 'image') imgEl.src = reply.url.split('/').pop();
+    else imgEl.remove();
+  }
+
+  i++;
+}
+</script>
+</body>
