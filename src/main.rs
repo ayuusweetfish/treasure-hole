@@ -1,17 +1,43 @@
 use std::io::Write;
 
+#[derive(Debug)]
+pub struct StringError {
+  s: String,
+}
+
+impl StringError {
+  pub fn new(s: String) -> Self {
+    Self { s }
+  }
+}
+
+impl std::convert::From<&str> for StringError {
+  fn from(s: &str) -> Self {
+    Self { s: s.to_string() }
+  }
+}
+impl std::convert::From<String> for StringError {
+  fn from(s: String) -> Self {
+    Self { s }
+  }
+}
+
+impl std::fmt::Display for StringError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.s)
+  }
+}
+impl std::error::Error for StringError {}
+
 type DynResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 async fn fetch_bytes(client: &reqwest::Client, url: &str) -> DynResult<bytes::Bytes> {
-  let resp =
-    client.get(url)
-      .header("TOKEN", include_str!("token.txt").trim())
-      .send().await?;
+  let resp = client.get(url).send().await?;
   let status = resp.status();
   if status.as_u16() != 200 {
-    panic!("HTTP Status: {} {}",
+    return Err(Box::new(StringError::from(format!("HTTP Status: {} {}",
       status.as_u16(),
-      status.canonical_reason().unwrap_or("Unknown reason"));
+      status.canonical_reason().unwrap_or("Unknown reason")))));
   }
 
   let body = resp.bytes().await?;
@@ -23,7 +49,7 @@ async fn fetch_json(client: &reqwest::Client, url: String) -> DynResult<(String,
   let body = String::from_utf8((&body).to_vec())?;
   match serde_json::de::from_str::<serde_json::Value>(&body) {
     Ok(r) => Ok((body, r)),
-    _ => panic!("Cannot parse JSON document"),
+    _ => Err(Box::new(StringError::from("Cannot parse JSON document"))),
   }
 }
 
@@ -32,14 +58,14 @@ macro_rules! expect_json_type {
   ($value:expr, Option $variant:tt) => {
     match $value {
       Some(serde_json::Value::$variant(x)) => x,
-      _ => panic!("Incorrect JSON format"),
+      _ => return Err(Box::new(StringError::from("Incorrect JSON format"))),
     }
   };
   // Direct types
   ($value:expr, $variant:tt) => {
     match $value {
       serde_json::Value::$variant(x) => x,
-      _ => panic!("Incorrect JSON format"),
+      _ => return Err(Box::new(StringError::from("Incorrect JSON format"))),
     }
   };
 }
@@ -55,11 +81,16 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
     // println!("{:?}", attns);
 
     // Return code
-    let code = expect_json_type!(attns.get("code"), Option Number)
-      .as_i64().unwrap_or_else(|| panic!("Incorrect JSON format"));
-    if code != 0 {
-      panic!("Incorrect code {}; message {}", code,
-        expect_json_type!(attns.get("msg"), Option String));
+    let code = expect_json_type!(attns.get("code"), Option Number).as_i64();
+    match code {
+      Some(code) if code != 0 => {
+        return Err(Box::new(StringError::from(format!(
+          "Incorrect code {}; message {}", code,
+          expect_json_type!(attns.get("msg"), Option String)
+        ))));
+      },
+      None => return Err(Box::new(StringError::from("Incorrect JSON format"))),
+      _ => {},
     }
 
     let posts = expect_json_type!(attns.get("data"), Option Array);
@@ -68,7 +99,7 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
     for post in posts {
       let pid = match expect_json_type!(post.get("pid"), Option Number).as_u64() {
         Some(x) => x,
-        None => panic!("Incorrect JSON format"),
+        None => return Err(Box::new(StringError::from("Incorrect JSON format"))),
       };
       pids.push(pid);
     }
@@ -164,6 +195,12 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
   let attn_pids = fetch_attn_pids(&client).await?;
   // println!("{:?}", attn_pids);
 
+  match std::fs::remove_dir_all(wd) {
+    Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+      return Err(Box::new(StringError::from("Cannot remove existing contents")));
+    },
+    _ => {},
+  }
   std::fs::create_dir(wd)?;
 
   let mut wd_path = std::path::PathBuf::from(wd);
@@ -210,12 +247,20 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
 
 #[tokio::main]
 async fn main() -> DynResult {
-  let client = reqwest::Client::builder()
-    .proxy(reqwest::Proxy::https("http://127.0.0.1:1087")?)
-    .build()?;
+  let token = include_str!("token.txt").trim().to_string();
+  let proxy = "http://127.0.0.1:1087".to_string();
+  let target_dir = "./test1".to_string();
 
-  // let post = fetch("https://tapi.thuhole.com/v3/contents/post/detail?pid=595301");
-  let path = std::path::Path::new("./test1");
+  let mut headers = reqwest::header::HeaderMap::new();
+  headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(&token)?);
+  let mut client_builder = reqwest::Client::builder()
+    .default_headers(headers);
+  if proxy != "" {
+    client_builder = client_builder.proxy(reqwest::Proxy::https(&proxy)?);
+  }
+  let client = client_builder.build()?;
+
+  let path = std::path::Path::new(&target_dir);
   fetch_attn_all(&client, path).await?;
 
   Ok(())
