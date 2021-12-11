@@ -184,9 +184,12 @@ async fn fetch_and_save_posts(
     }
   }
 
-  let image_futs = images.iter().map(|image_url|
-    fetch_and_save_image(client, &image_url, wd));
-  futures::future::try_join_all(image_futs).await?;
+  for image_chunk in images.chunks(10) {
+    let image_futs = image_chunk.iter().map(
+      |image_url| fetch_and_save_image(client, &image_url, wd)
+    );
+    futures::future::try_join_all(image_futs).await?;
+  }
 
   Ok(ref_pids)
 }
