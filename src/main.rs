@@ -18,8 +18,8 @@ async fn fetch_bytes(client: &reqwest::Client, url: &str) -> DynResult<bytes::By
   Ok(body)
 }
 
-async fn fetch_json(client: &reqwest::Client, url: &str) -> DynResult<(String, serde_json::Value)> {
-  let body = fetch_bytes(client, url).await?;
+async fn fetch_json(client: &reqwest::Client, url: String) -> DynResult<(String, serde_json::Value)> {
+  let body = fetch_bytes(client, &url).await?;
   let body = String::from_utf8((&body).to_vec())?;
   match serde_json::de::from_str::<serde_json::Value>(&body) {
     Ok(r) => Ok((body, r)),
@@ -49,7 +49,7 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
 
   for page in 1.. {
     let url = format!("https://tapi.thuhole.com/v3/contents/post/attentions?page={}", page);
-    let (_text, attns) = fetch_json(&client, &url).await?;
+    let (_text, attns) = fetch_json(&client, url).await?;
 
     let attns = expect_json_type!(attns, Object);
     // println!("{:?}", attns);
@@ -75,7 +75,7 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
 
     eprintln!("page {}; count {}", page, pids.len());
     // XXX: debug use
-    if page >= 1 { break; }
+    if page >= 3 { break; }
   }
 
   Ok(pids)
@@ -99,33 +99,45 @@ async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
 
   let mut f = std::fs::File::create("data.js")?;
   f.write_all("const posts = [\n".as_bytes())?;
-  // Fetch each post and write to file
-  for pid in attn_pids {
-    eprintln!("{}", pid);
-    let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
-    let (post_text, post_json) = fetch_json(&client, &url).await?;
-    f.write_all(post_text.as_bytes())?;
-    f.write_all(",\n".as_bytes())?;
+  
+  let mut images = vec![];
 
-    // Look for image contents
-    // Post
-    let post = expect_json_type!(post_json.get("post"), Option Object);
-    let post_type = expect_json_type!(post.get("type"), Option String);
-    if post_type == "image" {
-      let image_url = expect_json_type!(post.get("url"), Option String);
-      fetch_and_save_image(client, &image_url).await?;
-    }
-    // Replies
-    let replies = expect_json_type!(post_json.get("data"), Option Array);
-    for reply in replies {
-      let reply_type = expect_json_type!(reply.get("type"), Option String);
-      if reply_type == "image" {
-        let image_url = expect_json_type!(reply.get("url"), Option String);
-        fetch_and_save_image(client, &image_url).await?;
+  // Fetch each post and write to file
+  for pid_chunk in attn_pids.chunks(10) {
+    let text_futs = pid_chunk.iter().map(|&pid| {
+      eprintln!("{}", pid);
+      let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
+      fetch_json(&client, url)
+    });
+    let results = futures::future::try_join_all(text_futs).await?;
+
+    for (post_text, post_json) in results {
+      f.write_all(post_text.as_bytes())?;
+      f.write_all(",\n".as_bytes())?;
+
+      // Look for image contents
+      // Post
+      let post = expect_json_type!(post_json.get("post"), Option Object);
+      let post_type = expect_json_type!(post.get("type"), Option String);
+      if post_type == "image" {
+        let image_url = expect_json_type!(post.get("url"), Option String);
+        images.push(image_url.clone());
+      }
+      // Replies
+      let replies = expect_json_type!(post_json.get("data"), Option Array);
+      for reply in replies {
+        let reply_type = expect_json_type!(reply.get("type"), Option String);
+        if reply_type == "image" {
+          let image_url = expect_json_type!(reply.get("url"), Option String);
+          images.push(image_url.clone());
+        }
       }
     }
   }
   f.write_all("];\n".as_bytes())?;
+
+  let image_futs = images.iter().map(|image_url| fetch_and_save_image(client, &image_url));
+  futures::future::try_join_all(image_futs).await?;
 
   Ok(())
 }
