@@ -106,7 +106,7 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
 
     eprintln!("page {}; count {}", page, pids.len());
     // XXX: debug use
-    if page >= 1 { break; }
+    // if page >= 1 { break; }
   }
 
   Ok(pids)
@@ -145,7 +145,7 @@ async fn fetch_and_save_posts(
   // Fetch each post and write to file
   for pid_chunk in pids.chunks(10) {
     let text_futs = pid_chunk.iter().map(|&pid| {
-      eprintln!("{}", pid);
+      eprintln!("fetch post {}", pid);
       let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
       fetch_json(&client, url)
     });
@@ -205,13 +205,13 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
 
   let mut wd_path = std::path::PathBuf::from(wd);
   wd_path.push("data.js");
-  println!("data: {:?}", wd_path);
+  eprintln!("database: {:?}", wd_path);
   let mut f = std::fs::File::create(wd_path)?;
   f.write_all("const posts = [\n".as_bytes())?;
 
   let mut img_wd_path = std::path::PathBuf::from(wd);
   img_wd_path.push("images");
-  println!("images: {:?}", img_wd_path);
+  eprintln!("images: {:?}", img_wd_path);
   std::fs::create_dir(img_wd_path)?;
 
   // Deduplication
@@ -238,7 +238,7 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
   // Write HTML
   let mut html_wd_path = std::path::PathBuf::from(wd);
   html_wd_path.push("index.html");
-  println!("page: {:?}", html_wd_path);
+  eprintln!("page: {:?}", html_wd_path);
   let mut f = std::fs::File::create(html_wd_path)?;
   f.write_all(include_bytes!("../index.html"))?;
 
@@ -247,9 +247,9 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
 
 #[tokio::main]
 async fn main() -> DynResult {
-  let token = include_str!("token.txt").trim().to_string();
-  let proxy = "http://127.0.0.1:1087".to_string();
-  let target_dir = "./test1".to_string();
+  let token = std::env::var("TOKEN")?;
+  let proxy = std::env::var("HTTP_PROXY")?;
+  let target_dir = std::env::var("DIR")?;
 
   let mut headers = reqwest::header::HeaderMap::new();
   headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(&token)?);
