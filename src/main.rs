@@ -2,7 +2,7 @@ use std::io::Write;
 
 type DynResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-async fn fetch_text(client: &reqwest::Client, url: &str) -> DynResult<String> {
+async fn fetch_bytes(client: &reqwest::Client, url: &str) -> DynResult<bytes::Bytes> {
   let resp =
     client.get(url)
       .header("TOKEN", include_str!("token.txt").trim())
@@ -14,14 +14,34 @@ async fn fetch_text(client: &reqwest::Client, url: &str) -> DynResult<String> {
       status.canonical_reason().unwrap_or("Unknown reason"));
   }
 
-  let body = resp.text().await?;
+  let body = resp.bytes().await?;
   Ok(body)
 }
 
-async fn fetch_json(client: &reqwest::Client, url: &str) -> DynResult<serde_json::Value> {
-  let body = fetch_text(client, url).await?;
-  serde_json::de::from_str::<serde_json::Value>(&body)
-    .or_else(|_| panic!("Cannot parse JSON document"))
+async fn fetch_json(client: &reqwest::Client, url: &str) -> DynResult<(String, serde_json::Value)> {
+  let body = fetch_bytes(client, url).await?;
+  let body = String::from_utf8((&body).to_vec())?;
+  match serde_json::de::from_str::<serde_json::Value>(&body) {
+    Ok(r) => Ok((body, r)),
+    _ => panic!("Cannot parse JSON document"),
+  }
+}
+
+macro_rules! expect_json_type {
+  // Optional types
+  ($value:expr, Option $variant:tt) => {
+    match $value {
+      Some(serde_json::Value::$variant(x)) => x,
+      _ => panic!("Incorrect JSON format"),
+    }
+  };
+  // Direct types
+  ($value:expr, $variant:tt) => {
+    match $value {
+      serde_json::Value::$variant(x) => x,
+      _ => panic!("Incorrect JSON format"),
+    }
+  };
 }
 
 async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
@@ -29,24 +49,7 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
 
   for page in 1.. {
     let url = format!("https://tapi.thuhole.com/v3/contents/post/attentions?page={}", page);
-    let attns = fetch_json(&client, &url).await?;
-
-    macro_rules! expect_json_type {
-      // Optional types
-      ($value:expr, Option $variant:tt) => {
-        match $value {
-          Some(serde_json::Value::$variant(x)) => x,
-          _ => panic!("Incorrect JSON format"),
-        }
-      };
-      // Direct types
-      ($value:expr, $variant:tt) => {
-        match $value {
-          serde_json::Value::$variant(x) => x,
-          _ => panic!("Incorrect JSON format"),
-        }
-      };
-    }
+    let (_text, attns) = fetch_json(&client, &url).await?;
 
     let attns = expect_json_type!(attns, Object);
     // println!("{:?}", attns);
@@ -72,20 +75,25 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
 
     eprintln!("page {}; count {}", page, pids.len());
     // XXX: debug use
-    if page >= 3 { break; }
+    if page >= 1 { break; }
   }
 
   Ok(pids)
 }
 
-#[tokio::main]
-async fn main() -> DynResult {
-  let client = reqwest::Client::builder()
-    .proxy(reqwest::Proxy::https("http://127.0.0.1:1087")?)
-    .build()?;
+async fn fetch_and_save_image(client: &reqwest::Client, url: &str) -> DynResult {
+  eprintln!("fetch image {}", url);
+  let url = format!("https://i.thuhole.com/{}", url);
+  let bytes = fetch_bytes(client, &url).await?;
 
-  // let post = fetch("https://tapi.thuhole.com/v3/contents/post/detail?pid=595301");
+  let paths = url.split('/').collect::<Vec<_>>();
+  let mut f = std::fs::File::create(&paths.last().unwrap())?;
+  f.write_all(&bytes)?;
 
+  Ok(())
+}
+
+async fn fetch_attn_all(client: &reqwest::Client) -> DynResult {
   let attn_pids = fetch_attn_pids(&client).await?;
   // println!("{:?}", attn_pids);
 
@@ -95,11 +103,41 @@ async fn main() -> DynResult {
   for pid in attn_pids {
     eprintln!("{}", pid);
     let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
-    let post = fetch_text(&client, &url).await?;
-    f.write_all(post.as_bytes())?;
+    let (post_text, post_json) = fetch_json(&client, &url).await?;
+    f.write_all(post_text.as_bytes())?;
     f.write_all(",\n".as_bytes())?;
+
+    // Look for image contents
+    // Post
+    let post = expect_json_type!(post_json.get("post"), Option Object);
+    let post_type = expect_json_type!(post.get("type"), Option String);
+    if post_type == "image" {
+      let image_url = expect_json_type!(post.get("url"), Option String);
+      fetch_and_save_image(client, &image_url).await?;
+    }
+    // Replies
+    let replies = expect_json_type!(post_json.get("data"), Option Array);
+    for reply in replies {
+      let reply_type = expect_json_type!(reply.get("type"), Option String);
+      if reply_type == "image" {
+        let image_url = expect_json_type!(reply.get("url"), Option String);
+        fetch_and_save_image(client, &image_url).await?;
+      }
+    }
   }
   f.write_all("];\n".as_bytes())?;
+
+  Ok(())
+}
+
+#[tokio::main]
+async fn main() -> DynResult {
+  let client = reqwest::Client::builder()
+    .proxy(reqwest::Proxy::https("http://127.0.0.1:1087")?)
+    .build()?;
+
+  // let post = fetch("https://tapi.thuhole.com/v3/contents/post/detail?pid=595301");
+  fetch_attn_all(&client).await?;
 
   Ok(())
 }
