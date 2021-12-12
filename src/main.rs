@@ -72,7 +72,10 @@ macro_rules! expect_json_type {
   };
 }
 
-async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
+async fn fetch_attn_pids(
+  client: &reqwest::Client,
+  tx: std::sync::mpsc::Sender<(bool, String)>,
+) -> DynResult<Vec<u64>> {
   let mut pids = vec![];
 
   for page in 1.. {
@@ -106,9 +109,9 @@ async fn fetch_attn_pids(client: &reqwest::Client) -> DynResult<Vec<u64>> {
       pids.push(pid);
     }
 
-    eprintln!("page {}; count {}", page, pids.len());
+    tx.send((false, format!("获取收藏列表（第 {} 页，{} 条）", page, pids.len()))).unwrap();
     // XXX: debug use
-    // if page >= 1 { break; }
+    if page >= 1 { break; }
   }
 
   Ok(pids)
@@ -119,7 +122,6 @@ async fn fetch_and_save_image(
   url: &str,
   wd: &std::path::Path,
 ) -> DynResult {
-  eprintln!("fetch image {}", url);
   let url = format!("https://i.thuhole.com/{}", url);
   let bytes = fetch_bytes(client, &url).await?;
 
@@ -135,6 +137,7 @@ async fn fetch_and_save_image(
 
 async fn fetch_and_save_posts(
   client: &reqwest::Client,
+  tx: std::sync::mpsc::Sender<(bool, String)>,
   pids: &[u64],
   f: &mut std::fs::File,
   wd: &std::path::Path,
@@ -147,10 +150,10 @@ async fn fetch_and_save_posts(
   // Fetch each post and write to file
   for pid_chunk in pids.chunks(10) {
     let text_futs = pid_chunk.iter().map(|&pid| {
-      eprintln!("fetch post {}", pid);
       let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
       fetch_json(&client, url)
     });
+    tx.send((false, format!("获取帖子内容 {:?}", pid_chunk))).unwrap();
     let results = futures::future::try_join_all(text_futs).await?;
 
     for (post_text, post_json) in results {
@@ -158,9 +161,9 @@ async fn fetch_and_save_posts(
       let code = expect_json_type!(post_json.get("code"), Option Number).as_i64();
       match code {
         Some(-101) => {
-          eprintln!("Skipping (message: {})",
+          tx.send((false, format!("跳过（信息：{}）",
             expect_json_type!(post_json.get("msg"), Option String)
-          );
+          ))).unwrap();
           continue;
         },
         Some(code) if code != 0 => {
@@ -206,18 +209,25 @@ async fn fetch_and_save_posts(
     }
   }
 
-  for image_chunk in images.chunks(10) {
+  for (i, image_chunk) in images.chunks(10).enumerate() {
     let image_futs = image_chunk.iter().map(
       |image_url| fetch_and_save_image(client, &image_url, wd)
     );
+    tx.send((false, format!("保存图片（{}/{}）",
+      std::cmp::min((i + 1) * 10, images.len()),
+      images.len()))).unwrap();
     futures::future::try_join_all(image_futs).await?;
   }
 
   Ok(ref_pids)
 }
 
-async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynResult {
-  let attn_pids = fetch_attn_pids(&client).await?;
+async fn fetch_attn_all(
+  client: &reqwest::Client,
+  tx: std::sync::mpsc::Sender<(bool, String)>,
+  wd: &std::path::Path,
+) -> DynResult {
+  let attn_pids = fetch_attn_pids(&client, { let tx = tx.clone(); tx }).await?;
   // println!("{:?}", attn_pids);
 
   match std::fs::remove_dir_all(wd) {
@@ -230,20 +240,20 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
 
   let mut wd_path = std::path::PathBuf::from(wd);
   wd_path.push("data.js");
-  eprintln!("database: {:?}", wd_path);
+  // tx.send((false, format!("database: {:?}", wd_path))).unwrap();
   let mut f = std::fs::File::create(wd_path)?;
   f.write_all("const posts = [\n".as_bytes())?;
 
   let mut img_wd_path = std::path::PathBuf::from(wd);
   img_wd_path.push("images");
-  eprintln!("images: {:?}", img_wd_path);
+  // tx.send((false, format!("images: {:?}", img_wd_path))).unwrap();
   std::fs::create_dir(img_wd_path)?;
 
   // Deduplication
   let mut fetched_pids = std::collections::HashSet::new();
 
   fetched_pids.extend(attn_pids.iter().copied());
-  let mut ref_pids = fetch_and_save_posts(client, &attn_pids, &mut f, wd).await?;
+  let mut ref_pids = fetch_and_save_posts(client, { let tx = tx.clone(); tx }, &attn_pids, &mut f, wd).await?;
   
   // Delimiter to denote 'reachable by references'
   f.write_all("'---',\n".as_bytes())?;
@@ -254,8 +264,8 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
       .filter(|pid| !fetched_pids.contains(pid))
       .collect::<Vec<_>>();
     fetched_pids.extend(attn_pids.iter().copied());
-    eprintln!("referenced: {:?}", ref_pids);
-    ref_pids = fetch_and_save_posts(client, &ref_pids, &mut f, wd).await?;
+    // tx.send((false, format!("referenced: {:?}", ref_pids))).unwrap();
+    ref_pids = fetch_and_save_posts(client, { let tx = tx.clone(); tx }, &ref_pids, &mut f, wd).await?;
   }
 
   f.write_all("];\n".as_bytes())?;
@@ -263,30 +273,161 @@ async fn fetch_attn_all(client: &reqwest::Client, wd: &std::path::Path) -> DynRe
   // Write HTML
   let mut html_wd_path = std::path::PathBuf::from(wd);
   html_wd_path.push("index.html");
-  eprintln!("page: {:?}", html_wd_path);
+  tx.send((false, format!("保存位置为 {:?}", html_wd_path))).unwrap();
   let mut f = std::fs::File::create(html_wd_path)?;
   f.write_all(include_bytes!("../index.html"))?;
 
   Ok(())
 }
 
-#[tokio::main]
-async fn main() -> DynResult {
+async fn fetch_everything(
+  token: &str, proxy: &str, target_dir: &std::path::Path,
+  tx: std::sync::mpsc::Sender<(bool, String)>,
+) -> DynResult {
+/*
   let token = std::env::var("TOKEN")?;
   let proxy = std::env::var("HTTP_PROXY")?;
   let target_dir = std::env::var("DIR")?;
+*/
 
   let mut headers = reqwest::header::HeaderMap::new();
-  headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(&token)?);
+  headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(token)?);
   let mut client_builder = reqwest::Client::builder()
     .default_headers(headers);
   if proxy != "" {
-    client_builder = client_builder.proxy(reqwest::Proxy::https(&proxy)?);
+    client_builder = client_builder.proxy(reqwest::Proxy::https(proxy)?);
   }
   let client = client_builder.build()?;
 
-  let path = std::path::Path::new(&target_dir);
-  fetch_attn_all(&client, path).await?;
+  fetch_attn_all(&client, tx, target_dir).await?;
+
+  Ok(())
+}
+
+#[tokio::main]
+async fn main() -> DynResult {
+  let mut ui = iui::UI::init().unwrap();
+
+  use iui::controls::*;
+
+  let mut win = Window::new(&ui, "hole", 360, 540, WindowType::HasMenubar);
+  let mut grid = LayoutGrid::new(&ui);
+  grid.set_padded(&ui, true);
+  win.set_child(&ui, grid.clone());
+
+  let ent_token = Entry::new(&ui);
+  let mut ent_reflv = Spinbox::new(&ui, 0, 10);
+  let ent_proxy = Entry::new(&ui);
+  let controls: [(&str, Control); 3] = [
+    ("身份令牌", ent_token.clone().into()),
+    ("引用层数", ent_reflv.clone().into()),
+    ("网络代理", ent_proxy.clone().into()),
+  ];
+  ent_reflv.set_value(&ui, 2);
+
+  for (i, (text, control)) in controls.iter().enumerate() {
+    let label = Label::new(&ui, text);
+    grid.append(&ui, label.clone(), 0, i as i32, 1, 1,
+      GridExpand::Neither, GridAlignment::Fill, GridAlignment::Fill);
+    grid.append(&ui, control.clone(), 1, i as i32, 1, 1,
+      GridExpand::Horizontal, GridAlignment::Fill, GridAlignment::Fill);
+  }
+
+  let ent_reflv_text = Entry::new(&ui);
+  grid.append(&ui, ent_reflv_text.clone(), 1, 1, 1, 1,
+    GridExpand::Horizontal, GridAlignment::Fill, GridAlignment::Fill);
+  ui.set_enabled(ent_reflv_text.clone(), false);
+  ui.set_shown(ent_reflv_text.clone(), false);
+
+  let mut btn_go = Button::new(&ui, "开始");
+  grid.append(&ui, btn_go.clone(), 0, 4, 2, 1,
+    GridExpand::Horizontal, GridAlignment::Fill, GridAlignment::Fill);
+
+  let log_disp = MultilineEntry::new(&ui);
+  ui.set_enabled(log_disp.clone(), false);
+  ui.set_shown(log_disp.clone(), false);
+  grid.append(&ui, log_disp.clone(), 0, 5, 2, 1,
+    GridExpand::Both, GridAlignment::Fill, GridAlignment::Fill);
+
+  let handle = tokio::runtime::Handle::current();
+  let (tx, rx) = std::sync::mpsc::channel();
+  let mut logs = vec![];
+
+  btn_go.on_clicked(&ui, {
+    let mut ui = ui.clone();
+    let controls = controls.clone();
+    let ent_reflv = ent_reflv.clone();
+    let mut ent_reflv_text = ent_reflv_text.clone();
+    let btn_go = btn_go.clone();
+    let log_disp = log_disp.clone();
+    move |_| {
+      let token = ent_token.value(&ui);
+      let proxy = ent_proxy.value(&ui);
+      // Directory of executable
+      let mut wd = std::env::current_exe().unwrap();
+      wd.pop();
+      wd.push(&format!("2021-12-12-12-02-{}", token));
+
+      // Disable controls
+      for (_, control) in &controls {
+        ui.set_enabled(control.clone(), false);
+      }
+      ent_reflv_text.set_value(&ui, &ent_reflv.value(&ui).to_string());
+      ui.set_shown(ent_reflv.clone(), false);
+      ui.set_shown(ent_reflv_text.clone(), true);
+      ui.set_enabled(btn_go.clone(), false);
+      ui.set_shown(log_disp.clone(), true);
+
+      // Spawn thread
+      let tx = tx.clone();
+      tx.send((false, format!("备份至 {:?}", wd))).unwrap();
+      handle.spawn(async move {
+        let result = fetch_everything(
+          &token,
+          &std::env::var("HTTP_PROXY").unwrap(),
+          //&proxy,
+          &wd,
+          { let tx = tx.clone(); tx },
+        ).await;
+        if let Err(e) = result {
+          tx.send((true, e.to_string())).unwrap();
+        } else {
+          tx.send((true, "完成".to_string())).unwrap();
+        }
+      });
+    }
+  });
+
+  win.show(&ui);
+
+  let mut event_loop = ui.event_loop();
+  event_loop.on_tick(&ui, {
+    let mut ui = ui.clone();
+    let controls = controls.clone();
+    let ent_reflv = ent_reflv.clone();
+    let ent_reflv_text = ent_reflv_text.clone();
+    let mut log_disp = log_disp.clone();
+    let logs = &mut logs;
+    move || {
+      if let Ok((term, text)) = rx.try_recv() {
+        // Add to log
+        logs.insert(0, text);
+        if logs.len() >= 500 { logs.pop(); }
+        log_disp.set_value(&ui, &logs.join("\n"));
+
+        if term {
+          // Enable controls
+          for (_, control) in &controls {
+            ui.set_enabled(control.clone(), true);
+          }
+          ui.set_shown(ent_reflv.clone(), true);
+          ui.set_shown(ent_reflv_text.clone(), false);
+          ui.set_enabled(btn_go.clone(), true);
+        }
+      }
+    }
+  });
+  event_loop.run_delay(&ui, 10);
 
   Ok(())
 }

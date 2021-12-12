@@ -11,3 +11,4 @@ bytebuffer = "0.2.1"
 bytes = "*"
 futures = "0.3"
 regex = "1"
+iui = { git = "https://github.com/rust-native-ui/libui-rs", branch = "trunk" }
