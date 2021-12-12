@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  <title>Treasure hole</title>
+  <script src="https://cdn.bootcdn.net/ajax/libs/markdown-it/12.1.0/markdown-it.min.js"></script>
+</head>
+<body>
+<style>
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 20px 0;
+    color: #222;
+    background: #fffefd;
+  }
+
+  .divider {
+    margin: 12px 0;
+    height: 0px;
+    border-top: 2px solid #f0f0f0;
+  }
+  .heavy-divider {
+    margin: 12px 0;
+    height: 0px;
+    border-top: 2px solid #606060;
+  }
+
+  .post {
+    margin: 18px 0;
+  }
+  .post-links {
+    position: absolute;
+    width: 50%;
+    margin-top: 6px;
+    left: calc(-50% - 1em);
+    text-align: right;
+  }
+  .post-ref-hint {
+    position: absolute;
+    margin-top: 6px;
+    left: calc(100% + 1em);
+    color: #606060;
+  }
+  .post-header {
+    margin-bottom: 6px;
+  }
+  .post > .post-header {
+    background: #f8f7f6;
+    border-top: 2px solid #f0f0f0;
+    padding: 4px 8px;
+    margin-left: -8px;
+    margin-right: -8px;
+    margin-bottom: 10px;
+  }
+  .post-id {
+    font-weight: bold;
+  }
+  .reply-title .post-id {
+    color: #bbb;
+    font-weight: normal;
+    float: right;
+  }
+  .post-timestamp {
+    color: #bbb;
+    font-weight: normal;
+    margin-left: 1em;
+  }
+  .post-stats {
+    color: #bbb;
+    font-weight: normal;
+    float: right;
+  }
+  .post-content {
+    font-weight: normal;
+    color: #222;
+    word-break: break-word;
+  }
+  .reply-author {
+    font-weight: bold;
+  }
+  .reply-author .reply-to {
+    font-weight: normal;
+    color: #606060;
+    text-decoration: none;
+  }
+
+  .post img {
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .anchor {
+    position: relative;
+    width: 0;
+    height: 0;
+    top: -24px;
+  }
+  .post-links {
+    color: #606060;
+  }
+  .post-links a {
+    color: #606060;
+    text-decoration: none;
+  }
+  .post-links a.disabled {
+    color: #bbb;
+    pointer-events: none;
+  }
+</style>
+
+<!-- https://stackoverflow.com/a/21446426 -->
+<form id="jsonFile" name="jsonFile" enctype="multipart/form-data" method="post">
+  <fieldset>
+    <h2>JSON File</h2>
+     <input type='file' id='fileinput'>
+     <input type='button' id='btnLoad' value='Load' onclick='loadFile();'>
+  </fieldset>
+</form>
+<script>
+function loadFile() {
+  var input, file, fr;
+
+  if (typeof window.FileReader !== 'function') {
+    alert("The file API isn't supported on this browser yet.");
+    return;
+  }
+
+  input = document.getElementById('fileinput');
+  if (!input) {
+    alert("Um, couldn't find the fileinput element.");
+  }
+  else if (!input.files) {
+    alert("This browser doesn't seem to support the `files` property of file inputs.");
+  }
+  else if (!input.files[0]) {
+    alert("Please select a file before clicking 'Load'");
+  }
+  else {
+    file = input.files[0];
+    fr = new FileReader();
+    fr.onload = receivedText;
+    fr.readAsText(file);
+  }
+
+  function receivedText(e) {
+    let lines = e.target.result;
+    var obj = JSON.parse(lines);
+    console.log(obj);
+
+    const posts = [];
+    for (const p in obj[1]) posts.push(obj[1][p]);
+    window.loadPosts(posts);
+    document.getElementById('jsonFile').remove();
+  }
+}
+</script>
+
+<div id='list' style='position: relative; left: 20%; width: 60%'>
+</div>
+
+<div id='template' style='display: none'>
+<div class='post'>
+  <div class='anchor'></div>
+  <div class='post-links'>
+    <a class='link-prev' title='上一篇' href='#'>↑</a>
+    跳转
+    <a class='link-next' title='下一篇' href='#'>↓</a>
+  </div>
+  <div class='post-ref-hint' title='由其他帖子引用，并非关注'>※</div>
+  <div class='post-header'>
+    <span class='post-id'></span><!--
+    --><span class='post-timestamp'></span>
+    <span class='post-stats'></span>
+  </div>
+  <div class='post-content'>
+  </div>
+  <img>
+  <div class='replies'>
+  </div>
+</div>
+
+<div class='reply'>
+  <div class='divider'></div>
+  <div class='anchor'></div>
+  <div class='reply-title'>
+    <div class='post-header'>
+      <span class='reply-author'></span><!--
+      --><span class='post-timestamp'></span>
+      <span class='post-id'></span>
+    </div>
+  </div>
+  <div class='post-content'>
+  </div>
+  <img>
+</div>
+
+<div class='divider'></div>
+<div class='reply-title'>
+  <div class='post-header'>
+    <span class='reply-author'>洞主 <span class='reply-to'>→ Bob</span></span>
+    <span class='post-timestamp'>2021-12-03 20:38:15</span>
+    <span class='post-id'>#3095774</span>
+  </div>
+</div>
+<div class='post-content'>
+  Re Bob: 正在做牌子，那到时候来C楼北边门口见吧
+</div>
+</div>
+
+<script>
+window.loadPosts = (posts) => {
+
+const listEl = document.getElementById('list');
+const template = {
+  post: document.querySelector('#template .post'),
+  reply: document.querySelector('#template .reply'),
+};
+
+const md = window.markdownit({
+  html: false,
+  linkify: false,
+  breaks: true,
+  inline: true,
+});
+
+let reachedByRefDelim = posts.length;
+
+let i = 0;
+
+const linkReferences = (content) => {
+  for (const el of content.childNodes) {
+    if (el.nodeType === Node.TEXT_NODE) {
+      // Process references
+      const parts = el.textContent.split(/(?=#\d+)|(?<=#\d+)(?=\D)/g);
+      const newEl = document.createElement('span');
+      for (const s of parts)
+        if (s.match(/^#\d+$/g)) {
+          const linkNode = document.createElement('a');
+          linkNode.href = `#post-${s.substring(1)}`;
+          linkNode.textContent = s;
+          newEl.appendChild(linkNode);
+        } else {
+          const textNode = document.createTextNode(s);
+          newEl.appendChild(textNode);
+        }
+      el.replaceWith(newEl);
+    }
+  }
+};
+
+for (const p of posts) {
+  const postEl = template.post.cloneNode(true);
+  listEl.appendChild(postEl);
+  postEl.querySelector('.anchor').id = `post-${p.post.pid}`;
+  postEl.querySelector('.post-id').innerText = '#' + p.post.pid;
+  postEl.querySelector('.post-timestamp').innerText = (new Date(p.post.timestamp*1000)).toLocaleString();
+  postEl.querySelector('.post-stats').innerText =
+    `${p.post.likenum} 关注，${p.post.reply} 回复`;
+  postEl.querySelector('.post-content').innerHTML = md.renderInline(p.post.text);
+  linkReferences(postEl.querySelector('.post-content'));
+  if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
+  else postEl.querySelector('.link-prev').href = `#post-${posts[i - 1].post.pid}`;
+  if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
+  else postEl.querySelector('.link-next').href = `#post-${posts[i + 1].post.pid}`;
+  const imgEl = postEl.querySelector('img');
+  if (p.post.type === 'image') imgEl.src = 'images/' + p.post.url.split('/').pop();
+  else imgEl.remove();
+
+  if (i < reachedByRefDelim) postEl.querySelector('.post-ref-hint').remove();
+
+  const repliesEl = postEl.querySelector('.replies');
+  const replyAuthorName = {};
+
+  for (const reply of p.data) {
+    const replyEl = template.reply.cloneNode(true);
+    repliesEl.appendChild(replyEl);
+    replyEl.querySelector('.anchor').id = `reply-${reply.cid}`;
+    replyEl.querySelector('.post-id').innerText = '#' + reply.cid;
+    replyEl.querySelector('.post-timestamp').innerText = (new Date(reply.timestamp*1000)).toLocaleString();
+    replyEl.querySelector('.reply-author').innerText = reply.name;
+    if (reply.reply_to !== -1) {
+      replyEl.querySelector('.reply-author').innerHTML +=
+        ` <a class='reply-to' href='#reply-${reply.reply_to}'>→ ${replyAuthorName[reply.reply_to]}</a>`;
+    }
+    replyEl.querySelector('.post-content').innerHTML = md.renderInline(reply.text);
+    linkReferences(replyEl.querySelector('.post-content'));
+    const imgEl = replyEl.querySelector('img');
+    if (reply.type === 'image') imgEl.src = 'images/' + reply.url.split('/').pop();
+    else imgEl.remove();
+
+    replyAuthorName[reply.cid] = reply.name;
+  }
+
+  i++;
+}
+
+};
+</script>
+</body>

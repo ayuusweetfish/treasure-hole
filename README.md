@@ -22,3 +22,7 @@
   - 请在树洞中提问并附上当前访问树洞的方式。
 
 Enjoy
+
+## crawler\_595732.html
+
+另外，如果已经使用 [#595732](https://web.thuhole.com/##595732) 提供的方法爬取关注列表，请直接下载 [crawler\_595732.html](https://raw.githubusercontent.com/kawa-yoiko/treasure-hole/master/crawler_595732.html)，在浏览器中打开，选择爬取到的 JSON 文件即可。
