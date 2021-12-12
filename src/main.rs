@@ -148,12 +148,16 @@ async fn fetch_and_save_posts(
   let re_post_ref = regex::Regex::new(r"#(\d{1,})").unwrap();
 
   // Fetch each post and write to file
-  for pid_chunk in pids.chunks(10) {
+  for (i, pid_chunk) in pids.chunks(10).enumerate() {
     let text_futs = pid_chunk.iter().map(|&pid| {
       let url = format!("https://tapi.thuhole.com/v3/contents/post/detail?pid={}", pid);
       fetch_json(&client, url)
     });
-    tx.send((false, format!("获取帖子内容 {:?}", pid_chunk))).unwrap();
+    tx.send((false, format!("获取帖子内容（{}/{}，起始 #{}）",
+      std::cmp::min((i + 1) * 10, pids.len()),
+      pids.len(),
+      pid_chunk[0],
+    ))).unwrap();
     let results = futures::future::try_join_all(text_futs).await?;
 
     for (post_text, post_json) in results {
@@ -215,7 +219,8 @@ async fn fetch_and_save_posts(
     );
     tx.send((false, format!("保存图片（{}/{}）",
       std::cmp::min((i + 1) * 10, images.len()),
-      images.len()))).unwrap();
+      images.len(),
+    ))).unwrap();
     futures::future::try_join_all(image_futs).await?;
   }
 
@@ -226,6 +231,7 @@ async fn fetch_attn_all(
   client: &reqwest::Client,
   tx: std::sync::mpsc::Sender<(bool, String)>,
   wd: &std::path::Path,
+  ref_levels: u32,
 ) -> DynResult {
   let attn_pids = fetch_attn_pids(&client, { let tx = tx.clone(); tx }).await?;
   // println!("{:?}", attn_pids);
@@ -258,7 +264,8 @@ async fn fetch_attn_all(
   // Delimiter to denote 'reachable by references'
   f.write_all("'---',\n".as_bytes())?;
 
-  for _ in 0..2 {
+  for i in 0..ref_levels {
+    tx.send((false, format!("=== 跟随第 {} 层引用 ===", i + 1))).unwrap();
     ref_pids = ref_pids.iter()
       .copied()
       .filter(|pid| !fetched_pids.contains(pid))
@@ -282,14 +289,9 @@ async fn fetch_attn_all(
 
 async fn fetch_everything(
   token: &str, proxy: &str, target_dir: &std::path::Path,
+  ref_levels: u32,
   tx: std::sync::mpsc::Sender<(bool, String)>,
 ) -> DynResult {
-/*
-  let token = std::env::var("TOKEN")?;
-  let proxy = std::env::var("HTTP_PROXY")?;
-  let target_dir = std::env::var("DIR")?;
-*/
-
   let mut headers = reqwest::header::HeaderMap::new();
   headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(token)?);
   let mut client_builder = reqwest::Client::builder()
@@ -299,7 +301,7 @@ async fn fetch_everything(
   }
   let client = client_builder.build()?;
 
-  fetch_attn_all(&client, tx, target_dir).await?;
+  fetch_attn_all(&client, tx, target_dir, ref_levels).await?;
 
   Ok(())
 }
@@ -363,6 +365,7 @@ async fn main() -> DynResult {
     move |_| {
       let token = ent_token.value(&ui);
       let proxy = ent_proxy.value(&ui);
+      let reflv = ent_reflv.value(&ui) as u32;
       // Directory of executable
       let mut wd = std::env::current_exe().unwrap();
       wd.pop();
@@ -380,17 +383,17 @@ async fn main() -> DynResult {
 
       // Spawn thread
       let tx = tx.clone();
-      tx.send((false, format!("备份至 {:?}", wd))).unwrap();
+      tx.send((false, format!("开始备份，内容将保存在 {:?}\n======", wd))).unwrap();
       handle.spawn(async move {
         let result = fetch_everything(
           &token,
-          &std::env::var("HTTP_PROXY").unwrap(),
-          //&proxy,
+          &proxy,
           &wd,
+          reflv,
           { let tx = tx.clone(); tx },
         ).await;
         if let Err(e) = result {
-          tx.send((true, e.to_string())).unwrap();
+          tx.send((true, format!("出现意外问题，请在汇报时附上以下信息：\n{}\n======", e))).unwrap();
         } else {
           tx.send((true, "完成".to_string())).unwrap();
         }
