@@ -1,3 +1,9 @@
+## 🌐 在线版
+
+在线版位于 [hole.botany.run](https://hole.botany.run/)。登录凭据不会被保存，理论上也不会泄露，但为安全起见，完成备份后建议注销后重新登录。
+
+⚠️ 在线版抓取到的文字和图片可能会被合并归档，参与其他的树洞备份项目。此过程不会保留任何个人信息（如关注列表、投票），独立的备份压缩包将在事后全部删除，望知晓。
+
 ## 说明
 
 ![ ](capt1.png)
@@ -26,3 +32,23 @@ Enjoy
 ## crawler\_595732.html
 
 另外，如果已经使用 [#595732](https://web.thuhole.com/##595732) 提供的方法爬取关注列表，请直接下载 [crawler\_595732.html](https://raw.githubusercontent.com/kawa-yoiko/treasure-hole/master/crawler_595732.html)，在浏览器中打开，选择爬取到的 JSON 文件即可。
+
+## 技术信息
+
+主程序：使用 [Rust](https://www.rust-lang.org/) 编译器构建。
+
+```sh
+cargo build --release
+
+# 运行图形界面
+cargo run --release
+# 从命令行获取参数
+cargo run --release -- <token> <levels> <output_dir> [<proxy>]
+```
+
+服务端：使用 [Deno](https://deno.land/) 运行。
+
+```sh
+cd server
+deno run --allow-net --allow-run --allow-read server.js
+```

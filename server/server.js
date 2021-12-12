@@ -5,7 +5,9 @@ import staticFiles from "https://deno.land/x/static_files@1.1.4/mod.ts";
 const addr = ':1213';
 
 const EXEC_PATH = '../target/release/treasurehole';
-const PROXY = 'http://127.0.0.1:1087';
+// Use proxy if needed, e.g.
+// const PROXY = 'http://127.0.0.1:1087';
+const PROXY = '';
 
 const indexHtmlContents = await Deno.readFile('index.html');
 
@@ -41,7 +43,6 @@ const handler = async (req) => {
       log,
     };
     const worker = async () => {
-      // const cmd = ['sh', '-c', 'echo qwqwq 1>&2; sleep 1; echo qwqwq 1>&2'];
       const cmd = [
         EXEC_PATH,
         token,
@@ -126,5 +127,5 @@ const handler = async (req) => {
   return new Response('Not found', { status: 404 });
 };
 
-console.log(`Running at http://localhost:1213/`);
+console.log(`Running at http://localhost${addr}/`);
 await serve(handler, { addr });
