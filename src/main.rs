@@ -116,6 +116,9 @@ async fn fetch_attn_pids(
     // if page >= 1 { break; }
   }
 
+  // XXX: debug use
+  // return Ok(pids[0..5].to_vec());
+
   Ok(pids)
 }
 
@@ -294,6 +297,8 @@ async fn fetch_everything(
   ref_levels: u32,
   tx: std::sync::mpsc::Sender<(bool, String)>,
 ) -> DynResult {
+  tx.send((false, format!("开始备份，内容将保存在 {:?}\n======", target_dir))).unwrap();
+
   let mut headers = reqwest::header::HeaderMap::new();
   headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(token)?);
   let mut client_builder = reqwest::Client::builder()
@@ -308,8 +313,7 @@ async fn fetch_everything(
   Ok(())
 }
 
-#[tokio::main]
-async fn main() -> DynResult {
+async fn main_gui() -> DynResult {
   let mut ui = iui::UI::init().unwrap();
 
   use iui::controls::*;
@@ -386,7 +390,6 @@ async fn main() -> DynResult {
 
       // Spawn thread
       let tx = tx.clone();
-      tx.send((false, format!("开始备份，内容将保存在 {:?}\n======", wd))).unwrap();
       handle.spawn(async move {
         let result = fetch_everything(
           &token,
@@ -435,5 +438,38 @@ async fn main() -> DynResult {
   });
   event_loop.run_delay(&ui, 10);
 
+  Ok(())
+}
+
+#[tokio::main]
+async fn main() -> DynResult {
+  let args = std::env::args().collect::<Vec<_>>();
+  if args.len() >= 4 {
+    let (tx, rx) = std::sync::mpsc::channel();
+    tokio::runtime::Handle::current().spawn(async move {
+      loop {
+        if let Ok((term, text)) = rx.recv() {
+          eprintln!("{}", text);
+          if term { break; }
+        } else {
+          break;
+        }
+      }
+    });
+    let result = fetch_everything(
+      &args[1],
+      if args.len() >= 5 { &args[4] } else { "" },
+      std::path::Path::new(&args[3]),
+      args[2].parse()?,
+      tx.clone(),
+    ).await;
+    if let Err(e) = result {
+      eprintln!("出现意外问题：\n{}\n======", e);
+    } else {
+      eprintln!("完成");
+    }
+  } else {
+    main_gui().await?;
+  }
   Ok(())
 }
