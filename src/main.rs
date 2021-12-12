@@ -445,7 +445,7 @@ async fn main() -> DynResult {
   let args = std::env::args().collect::<Vec<_>>();
   if args.len() >= 4 {
     let (tx, mut rx) = tokio::sync::mpsc::channel(10);
-    tokio::runtime::Handle::current().spawn(async move {
+    let join_handle = tokio::runtime::Handle::current().spawn(async move {
       loop {
         if let Some((term, text)) = rx.recv().await {
           eprintln!("{}", text);
@@ -464,10 +464,12 @@ async fn main() -> DynResult {
       tx.clone(),
     ).await;
     if let Err(e) = result {
-      eprintln!("出现意外问题：\n{}\n======", e);
+      tx.clone().send((true, format!("出现意外问题：\n{}\n======", e))).await.unwrap();
     } else {
-      eprintln!("完成");
+      tx.clone().send((true, "完成".to_string())).await.unwrap();
     }
+    join_handle.await?;
+    std::io::stderr().flush().unwrap();
   } else {
     main_gui().await?;
   }
