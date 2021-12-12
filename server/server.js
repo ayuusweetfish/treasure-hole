@@ -55,7 +55,6 @@ const handler = async (req) => {
         stdout: 'null',
         stderr: 'piped',
       });
-      console.log(proc.stderr);
       const buf = new Uint8Array(4096);
       const decoder = new TextDecoder();
       const line = new Uint8Array(4096);

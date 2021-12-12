@@ -76,7 +76,7 @@ macro_rules! expect_json_type {
 
 async fn fetch_attn_pids(
   client: &reqwest::Client,
-  tx: std::sync::mpsc::Sender<(bool, String)>,
+  tx: tokio::sync::mpsc::Sender<(bool, String)>,
 ) -> DynResult<Vec<u64>> {
   let mut pids = vec![];
 
@@ -111,7 +111,7 @@ async fn fetch_attn_pids(
       pids.push(pid);
     }
 
-    tx.send((false, format!("获取收藏列表（第 {} 页，{} 条）", page, pids.len()))).unwrap();
+    tx.send((false, format!("获取收藏列表（第 {} 页，{} 条）", page, pids.len()))).await.unwrap();
     // XXX: debug use
     // if page >= 1 { break; }
   }
@@ -142,7 +142,7 @@ async fn fetch_and_save_image(
 
 async fn fetch_and_save_posts(
   client: &reqwest::Client,
-  tx: std::sync::mpsc::Sender<(bool, String)>,
+  tx: tokio::sync::mpsc::Sender<(bool, String)>,
   pids: &[u64],
   f: &mut std::fs::File,
   wd: &std::path::Path,
@@ -162,7 +162,7 @@ async fn fetch_and_save_posts(
       std::cmp::min((i + 1) * 10, pids.len()),
       pids.len(),
       pid_chunk[0],
-    ))).unwrap();
+    ))).await.unwrap();
     let results = futures::future::try_join_all(text_futs).await?;
 
     for (post_text, post_json) in results {
@@ -172,7 +172,7 @@ async fn fetch_and_save_posts(
         Some(-101) => {
           /*tx.send((false, format!("跳过（信息：{}）",
             expect_json_type!(post_json.get("msg"), Option String)
-          ))).unwrap();*/
+          ))).await.unwrap();*/
           continue;
         },
         Some(code) if code != 0 => {
@@ -225,7 +225,7 @@ async fn fetch_and_save_posts(
     tx.send((false, format!("保存图片（{}/{}）",
       std::cmp::min((i + 1) * 10, images.len()),
       images.len(),
-    ))).unwrap();
+    ))).await.unwrap();
     futures::future::try_join_all(image_futs).await?;
   }
 
@@ -234,7 +234,7 @@ async fn fetch_and_save_posts(
 
 async fn fetch_attn_all(
   client: &reqwest::Client,
-  tx: std::sync::mpsc::Sender<(bool, String)>,
+  tx: tokio::sync::mpsc::Sender<(bool, String)>,
   wd: &std::path::Path,
   ref_levels: u32,
 ) -> DynResult {
@@ -251,13 +251,13 @@ async fn fetch_attn_all(
 
   let mut wd_path = std::path::PathBuf::from(wd);
   wd_path.push("data.js");
-  // tx.send((false, format!("database: {:?}", wd_path))).unwrap();
+  // tx.send((false, format!("database: {:?}", wd_path))).await.unwrap();
   let mut f = std::fs::File::create(wd_path)?;
   f.write_all("const posts = [\n".as_bytes())?;
 
   let mut img_wd_path = std::path::PathBuf::from(wd);
   img_wd_path.push("images");
-  // tx.send((false, format!("images: {:?}", img_wd_path))).unwrap();
+  // tx.send((false, format!("images: {:?}", img_wd_path))).await.unwrap();
   std::fs::create_dir(img_wd_path)?;
 
   // Deduplication
@@ -270,13 +270,13 @@ async fn fetch_attn_all(
   f.write_all("'---',\n".as_bytes())?;
 
   for i in 0..ref_levels {
-    tx.send((false, format!("=== 跟随第 {} 层引用 ===", i + 1))).unwrap();
+    tx.send((false, format!("=== 跟随第 {} 层引用 ===", i + 1))).await.unwrap();
     ref_pids = ref_pids.iter()
       .copied()
       .filter(|pid| !fetched_pids.contains(pid))
       .collect::<Vec<_>>();
     fetched_pids.extend(attn_pids.iter().copied());
-    // tx.send((false, format!("referenced: {:?}", ref_pids))).unwrap();
+    // tx.send((false, format!("referenced: {:?}", ref_pids))).await.unwrap();
     ref_pids = fetch_and_save_posts(client, { let tx = tx.clone(); tx }, &ref_pids, &mut f, wd).await?;
   }
 
@@ -285,7 +285,7 @@ async fn fetch_attn_all(
   // Write HTML
   let mut html_wd_path = std::path::PathBuf::from(wd);
   html_wd_path.push("index.html");
-  tx.send((false, format!("保存位置为 {:?}", html_wd_path))).unwrap();
+  tx.send((false, format!("保存位置为 {:?}", html_wd_path))).await.unwrap();
   let mut f = std::fs::File::create(html_wd_path)?;
   f.write_all(include_bytes!("../index.html"))?;
 
@@ -295,9 +295,9 @@ async fn fetch_attn_all(
 async fn fetch_everything(
   token: &str, proxy: &str, target_dir: &std::path::Path,
   ref_levels: u32,
-  tx: std::sync::mpsc::Sender<(bool, String)>,
+  tx: tokio::sync::mpsc::Sender<(bool, String)>,
 ) -> DynResult {
-  tx.send((false, format!("开始备份，内容将保存在 {:?}\n======", target_dir))).unwrap();
+  tx.send((false, format!("开始备份，内容将保存在 {:?}\n======", target_dir))).await.unwrap();
 
   let mut headers = reqwest::header::HeaderMap::new();
   headers.insert("TOKEN", reqwest::header::HeaderValue::from_str(token)?);
@@ -358,7 +358,7 @@ async fn main_gui() -> DynResult {
     GridExpand::Both, GridAlignment::Fill, GridAlignment::Fill);
 
   let handle = tokio::runtime::Handle::current();
-  let (tx, rx) = std::sync::mpsc::channel();
+  let (tx, mut rx) = tokio::sync::mpsc::channel(10);
   let mut logs = vec![];
 
   btn_go.on_clicked(&ui, {
@@ -391,18 +391,17 @@ async fn main_gui() -> DynResult {
       // Spawn thread
       let tx = tx.clone();
       handle.spawn(async move {
-        let result = fetch_everything(
+        let msg = match fetch_everything(
           &token,
           &proxy,
           &wd,
           reflv,
           { let tx = tx.clone(); tx },
-        ).await;
-        if let Err(e) = result {
-          tx.send((true, format!("出现意外问题，请在汇报时附上以下信息：\n{}\n======", e))).unwrap();
-        } else {
-          tx.send((true, "完成".to_string())).unwrap();
-        }
+        ).await {
+          Err(e) => format!("出现意外问题，请在汇报时附上以下信息：\n{}\n======", e),
+          _ => "完成".to_string(),
+        };
+        tx.send((true, msg)).await.unwrap();
       });
     }
   });
@@ -445,11 +444,12 @@ async fn main_gui() -> DynResult {
 async fn main() -> DynResult {
   let args = std::env::args().collect::<Vec<_>>();
   if args.len() >= 4 {
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
     tokio::runtime::Handle::current().spawn(async move {
       loop {
-        if let Ok((term, text)) = rx.recv() {
+        if let Some((term, text)) = rx.recv().await {
           eprintln!("{}", text);
+          std::io::stderr().flush().unwrap();
           if term { break; }
         } else {
           break;
