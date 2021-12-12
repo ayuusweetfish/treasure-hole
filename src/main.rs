@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use std::io::Write;
 
 #[derive(Debug)]
@@ -111,7 +113,7 @@ async fn fetch_attn_pids(
 
     tx.send((false, format!("获取收藏列表（第 {} 页，{} 条）", page, pids.len()))).unwrap();
     // XXX: debug use
-    if page >= 1 { break; }
+    // if page >= 1 { break; }
   }
 
   Ok(pids)
@@ -165,9 +167,9 @@ async fn fetch_and_save_posts(
       let code = expect_json_type!(post_json.get("code"), Option Number).as_i64();
       match code {
         Some(-101) => {
-          tx.send((false, format!("跳过（信息：{}）",
+          /*tx.send((false, format!("跳过（信息：{}）",
             expect_json_type!(post_json.get("msg"), Option String)
-          ))).unwrap();
+          ))).unwrap();*/
           continue;
         },
         Some(code) if code != 0 => {
@@ -369,7 +371,8 @@ async fn main() -> DynResult {
       // Directory of executable
       let mut wd = std::env::current_exe().unwrap();
       wd.pop();
-      wd.push(&format!("2021-12-12-12-02-{}", token));
+      let time = chrono::offset::Local::now().format("%Y%m%d-%H%M");
+      wd.push(&format!("{}-{}", time, token));
 
       // Disable controls
       for (_, control) in &controls {

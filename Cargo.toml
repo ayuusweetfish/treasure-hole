@@ -12,3 +12,4 @@ bytes = "*"
 futures = "0.3"
 regex = "1"
 iui = { git = "https://github.com/rust-native-ui/libui-rs", branch = "trunk" }
+chrono = "0.4"
