@@ -23,9 +23,10 @@ const handler = async (req) => {
     return new Response(indexHtmlContents, { status: 200 });
   }
 
-  const requestMatch = path.match(/^\/request\/([a-z0-9]{1,50})$/);
+  const requestMatch = path.match(/^\/request\/([a-z0-9]{1,50})\/([01])$/);
   if (method === 'POST' && requestMatch !== null) {
     const token = requestMatch[1];
+    const cancelAttention = (requestMatch[2] === '0' ? false : true);
     const date = strftime('%Y%m%d-%H%M%S');
     const id = `${date}-${token}`;
     if (ctx[id] !== undefined) {
@@ -41,8 +42,9 @@ const handler = async (req) => {
       console.log(`${strftime('%F %H:%M:%S')} Starting ${id}`);
       let count = 0;
       for (let page = 1; ; page++) {
+        let requestPage = (cancelAttention ? 1 : page);
         const obj = await (await fetch(
-          `https://tapi.thuhole.com/v3/contents/post/attentions?page=${page}`, {
+          `https://tapi.thuhole.com/v3/contents/post/attentions?page=${requestPage}`, {
             headers: { 'TOKEN': token },
           }
         )).json();
@@ -68,6 +70,19 @@ ${cmt.text}`
 `(还有 ${post.reply - cmts.length} 条)`
               );
             }
+          }
+          // Cancel attention?
+          if (cancelAttention) {
+            const body = new FormData();
+            body.append('pid', post.pid.toString());
+            body.append('switch', '0');
+            const obj = await (await fetch(
+              `https://tapi.thuhole.com/v3/edit/attention`, {
+                method: 'POST',
+                headers: { 'TOKEN': token },
+                body,
+              }
+            )).json();
           }
         }
         count += obj.data.length;
