@@ -46,6 +46,10 @@ const handler = async (req) => {
             headers: { 'TOKEN': token },
           }
         )).json();
+        if (obj.code !== 0) {
+          log.splice(0, 0, `树洞返回错误：\n${obj.msg}\n======`);
+          break;
+        }
         if (obj.count === 0) break;
         for (const post of obj.data) {
           list.push(
@@ -56,12 +60,12 @@ ${post.text}`
           if (cmts) {
             for (const cmt of cmts)
               list.push(
-  `[${cmt.name}] ${timestr(cmt.timestamp)}
-  ${cmt.text}`
+`[${cmt.name}] ${timestr(cmt.timestamp)}
+${cmt.text}`
               );
             if (post.reply > cmts.length) {
               list.push(
-  `(还有 ${post.reply - cmts.length} 条)`
+`(还有 ${post.reply - cmts.length} 条)`
               );
             }
           }
