@@ -115,8 +115,8 @@
 <form id="jsonFile" name="jsonFile" enctype="multipart/form-data" method="post">
   <fieldset>
     <h2>JSON File</h2>
-     <input type='file' id='fileinput'>
-     <input type='button' id='btnLoad' value='Load' onclick='loadFile();'>
+     <input type='file' id='fileinput' accept=".json" onchange='loadFile();'>
+     <!-- <input type='button' id='btnLoad' value='Load' onclick='loadFile();'> -->
   </fieldset>
 </form>
 <script>
@@ -151,7 +151,7 @@ function loadFile() {
     console.log(obj);
 
     const posts = [];
-    for (const p in obj[1]) posts.push(obj[1][p]);
+    for (const p in obj[1]) posts.push([p, obj[1][p]]);
     window.loadPosts(posts);
     document.getElementById('jsonFile').remove();
   }
@@ -212,6 +212,45 @@ function loadFile() {
 
 <script>
 window.loadPosts = (posts) => {
+  function showReply(e) {
+    const postEl = e.target.closest('.post');
+    if (postEl === null) return;
+    const repliesEl = postEl.querySelector('.replies');
+    const replyAuthorName = {};
+    const p = postEl.data;
+
+    if (p.data === undefined) return;
+
+    if (!postEl.expanded) {
+      postEl.expanded = true;
+      if (repliesEl.querySelector('.reply') === null) {
+        for (const reply of p.data) {
+          const replyEl = template.reply.cloneNode(true);
+          repliesEl.appendChild(replyEl);
+          replyEl.querySelector('.anchor').id = `reply-${reply.cid}`;
+          replyEl.querySelector('.post-id').innerText = '#' + reply.cid;
+          replyEl.querySelector('.post-timestamp').innerText = (new Date(reply.timestamp*1000)).toLocaleString();
+          replyEl.querySelector('.reply-author').innerText = reply.name;
+          if (reply.reply_to !== -1) {
+            replyEl.querySelector('.reply-author').innerHTML +=
+              ` <a class='reply-to' href='#reply-${reply.reply_to}'>→ ${replyAuthorName[reply.reply_to]}</a>`;
+          }
+          replyEl.querySelector('.post-content').innerHTML = md.renderInline(reply.text);
+          linkReferences(replyEl.querySelector('.post-content'));
+          const imgEl = replyEl.querySelector('img');
+          if (reply.type === 'image') imgEl.src = 'img/' + p.post.url;
+          else imgEl.remove();
+
+          replyAuthorName[reply.cid] = reply.name;
+        }
+      } else {
+        repliesEl.style.display = null;
+      }
+    } else {
+      postEl.expanded = false;
+      repliesEl.style.display = 'none';
+    }
+  }
 
 const listEl = document.getElementById('list');
 const template = {
@@ -227,6 +266,36 @@ const md = window.markdownit({
 });
 
 let reachedByRefDelim = posts.length;
+
+let clickCount = 0;
+let selectionChangeCount = 0;
+
+listEl.addEventListener("mouseup", (event) => {
+  if (event.button === 0) {
+    clickCount++;
+    let thisClickCount = clickCount
+    if (clickCount === 1) {
+      setTimeout(() =>{
+        if (clickCount === 1 && selectionChangeCount < 2) {
+          showReply(event);
+          clickCount = 0;
+          selectionChangeCount = 0;
+        }
+      }, 200);
+    } else setTimeout(() => {
+      if (clickCount === thisClickCount) {
+        clickCount = 0;
+        selectionChangeCount = 0;
+      }
+    }, 200);
+  }
+});
+
+// 单击：mousedown - selectstart - 0次或1次（之前有选区从而被清空）selectionchange - mouseup - click
+//      或者selectionchange在click后（点击选区内）
+// 双击: 0或1 + 1或2次（单次尾部有空格，有的实现会先选空格后取消）selectionchange = 1-3次
+// 三击及以上： 0或1 + 1或2 + 1 次 = 2-4次
+document.addEventListener("selectionchange", () => selectionChangeCount++);
 
 let i = 0;
 
@@ -251,48 +320,37 @@ const linkReferences = (content) => {
   }
 };
 
-for (const p of posts) {
+for (const [pid, p] of posts) {
   const postEl = template.post.cloneNode(true);
+  postEl.data = p;
   listEl.appendChild(postEl);
-  postEl.querySelector('.anchor').id = `post-${p.post.pid}`;
-  postEl.querySelector('.post-id').innerText = '#' + p.post.pid;
-  postEl.querySelector('.post-timestamp').innerText = (new Date(p.post.timestamp*1000)).toLocaleString();
-  postEl.querySelector('.post-stats').innerText =
-    `${p.post.likenum} 关注，${p.post.reply} 回复`;
-  postEl.querySelector('.post-content').innerHTML = md.renderInline(p.post.text);
-  linkReferences(postEl.querySelector('.post-content'));
-  if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
-  else postEl.querySelector('.link-prev').href = `#post-${posts[i - 1].post.pid}`;
-  if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
-  else postEl.querySelector('.link-next').href = `#post-${posts[i + 1].post.pid}`;
-  const imgEl = postEl.querySelector('img');
-  if (p.post.type === 'image') imgEl.src = 'images/' + p.post.url.split('/').pop();
-  else imgEl.remove();
+  if (p.post) {
+    postEl.querySelector('.anchor').id = `post-${p.post.pid}`;
+    postEl.querySelector('.post-id').innerText = '#' + p.post.pid;
+    postEl.querySelector('.post-timestamp').innerText = (new Date(p.post.timestamp*1000)).toLocaleString();
+    postEl.querySelector('.post-stats').innerText =
+      `${p.post.likenum} 关注，${p.post.reply} 回复`;
+    postEl.querySelector('.post-content').innerHTML = md.renderInline(p.post.text);
+    linkReferences(postEl.querySelector('.post-content'));
+    if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
+    else postEl.querySelector('.link-prev').href = `#post-${posts[i - 1][1].post ? posts[i - 1][1].post.pid : posts[i - 1][0]}`;
+    if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
+    else postEl.querySelector('.link-next').href = `#post-${posts[i + 1][1].post ? posts[i + 1][1].post.pid : posts[i + 1][0]}`;
+    const imgEl = postEl.querySelector('img');
+    if (p.post.type === 'image') imgEl.src = 'img/' + p.post.url;
+    else imgEl.remove();
+  } else {
+    postEl.querySelector('.anchor').id = `post-${pid}`;
+    postEl.querySelector('.post-id').innerText = '#' + pid;
+    postEl.querySelector('.post-content').innerHTML = md.renderInline(p.msg);
+    linkReferences(postEl.querySelector('.post-content'));
+    if (i === 0) postEl.querySelector('.link-prev').classList.add('disabled');
+    else postEl.querySelector('.link-prev').href = `#post-${posts[i - 1][1].post ? posts[i - 1][1].post.pid : posts[i - 1][0]}`;
+    if (i === posts.length - 1) postEl.querySelector('.link-next').classList.add('disabled');
+    else postEl.querySelector('.link-next').href = `#post-${posts[i + 1][1].post ? posts[i + 1][1].post.pid : posts[i + 1][0]}`;
+  }
 
   if (i < reachedByRefDelim) postEl.querySelector('.post-ref-hint').remove();
-
-  const repliesEl = postEl.querySelector('.replies');
-  const replyAuthorName = {};
-
-  for (const reply of p.data) {
-    const replyEl = template.reply.cloneNode(true);
-    repliesEl.appendChild(replyEl);
-    replyEl.querySelector('.anchor').id = `reply-${reply.cid}`;
-    replyEl.querySelector('.post-id').innerText = '#' + reply.cid;
-    replyEl.querySelector('.post-timestamp').innerText = (new Date(reply.timestamp*1000)).toLocaleString();
-    replyEl.querySelector('.reply-author').innerText = reply.name;
-    if (reply.reply_to !== -1) {
-      replyEl.querySelector('.reply-author').innerHTML +=
-        ` <a class='reply-to' href='#reply-${reply.reply_to}'>→ ${replyAuthorName[reply.reply_to]}</a>`;
-    }
-    replyEl.querySelector('.post-content').innerHTML = md.renderInline(reply.text);
-    linkReferences(replyEl.querySelector('.post-content'));
-    const imgEl = replyEl.querySelector('img');
-    if (reply.type === 'image') imgEl.src = 'images/' + reply.url.split('/').pop();
-    else imgEl.remove();
-
-    replyAuthorName[reply.cid] = reply.name;
-  }
 
   i++;
 }
