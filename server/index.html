@@ -1,10 +1,8 @@
-
 <!DOCTYPE html>
 <html>
 <head>
   <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
   <title>Treasure hole</title>
-  <script src="https://cdn.bootcdn.net/ajax/libs/markdown-it/12.1.0/markdown-it.min.js"></script>
 </head>
 <body>
 <style>
@@ -74,6 +72,9 @@
     word-break: break-word;
     overflow-y: scroll;
   }
+  #recovery-hint, #recovery-hint a {
+    color: #fcc;
+  }
 </style>
 
 <div id='cen' style='position: relative; left: 20%; width: 60%'>
@@ -89,6 +90,8 @@
   <button id='btn-start' style='margin-bottom: 18px'>开始</button>
   <button id='btn-download' style='margin-bottom: 18px; display: none'>下载</button>
   <br>
+  <div id='recovery-hint' style='display: none'>若中途出现问题（如被限流、服务器崩溃等），请保存自己的 token 并关注 <a href='https://hole.botany.run/recovery'>hole.botany.run/recovery</a>，完成抓取的数据将在后续放出。另外也可以<a href='https://github.com/kawa-yoiko/treasure-hole/'>通过 GitHub 联系</a>~</div>
+  <br>
   <div id='log' style='display: none'>
   </div>
 </div>
@@ -96,6 +99,7 @@
 <script>
 const btnStart = document.getElementById('btn-start');
 const btnDownload = document.getElementById('btn-download');
+const recoveryHint = document.getElementById('recovery-hint');
 
 let downloadLink = null;
 
@@ -105,6 +109,7 @@ btnStart.addEventListener('click', (e) => {
   const logEl = document.getElementById('log');
   logEl.style.display = 'block';
   btnStart.disabled = true;
+  recoveryHint.style.display = 'none';
 
   fetch(`/request/${token}/${levels}`, { method: 'POST' })
     .then(response => response.text())
@@ -125,6 +130,7 @@ btnStart.addEventListener('click', (e) => {
                 btnDownload.style.display = 'unset';
               } else {
                 console.log('did not finish');
+                recoveryHint.style.display = 'block';
               }
               btnStart.disabled = false;
             }

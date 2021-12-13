@@ -145,6 +145,12 @@ const handler = async (req) => {
     });
   }
 
+  if (method === 'GET' && path === '/recovery') {
+    console.log(`Recovery`);
+    const htmlContents = await Deno.readFile('recovery.html');
+    return new Response(htmlContents, { status: 200 });
+  }
+
   return new Response('Not found', { status: 404 });
 };
 
