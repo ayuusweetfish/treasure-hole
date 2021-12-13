@@ -43,6 +43,7 @@ const handler = async (req) => {
       log,
     };
     const worker = async () => {
+      console.log(`Starting ${id} (levels = ${levels})`);
       const cmd = [
         EXEC_PATH,
         token,
@@ -92,8 +93,15 @@ const handler = async (req) => {
         } else {
           log.splice(0, 0, '完成');
         }
+        const rmProc = Deno.run({
+          cmd: ['rm', '-rf', `./data/${id}`],
+          stdout: 'null',
+          stderr: 'null',
+        });
+        await rmProc.status();
       }
       ctx[id].fin = true;
+      console.log(`Finished ${id}`);
       // Remove after 10 minutes
       setTimeout(() => delete ctx[id], 600000);
     };
@@ -117,6 +125,7 @@ const handler = async (req) => {
   const zipMatch = path.match(/^\/download\/([a-z0-9\-]{1,50}).zip$/);
   if (method === 'GET' && zipMatch !== null) {
     const id = zipMatch[1];
+    console.log(`Download ${id}`);
     return downloads({
       request: req,
       respondWith: r => r,
