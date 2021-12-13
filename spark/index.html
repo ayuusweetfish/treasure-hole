@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  <title>Treasure hole</title>
+</head>
+<body>
+<style>
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 20px 0;
+    color: #222;
+    background: #fffefd;
+  }
+
+  #cen, #cen * {
+    font-size: 20px;
+  }
+  #cen input {
+    width: calc(100% - 12px);
+    margin: 0;
+    padding: 0 6px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid #ddd;
+    transition: border-bottom 0.2s ease;
+  }
+  #cen input:focus {
+    outline: none;
+    border-bottom: 2px solid #222;
+  }
+  button {
+    margin-top: 12px;
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #eee;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  button:hover {
+    background: #f3f3f3;
+  }
+  button:active {
+    background: #ddd;
+  }
+  button[disabled] {
+    background: #f3f3f3;
+    color: #ccc;
+  }
+  button[disabled]:hover {
+    background: #f3f3f3;
+  }
+  button[disabled]:active {
+    background: #f3f3f3;
+  }
+  #btn-download:not(:active) {
+    background: #fff9e6;
+    border: 1px solid #edc;
+  }
+  #btn-download:hover {
+    background: #fffbf0;
+  }
+
+  #log {
+    background: #fffbf0;
+    padding: 12px 18px;
+    border-radius: 6px;
+    height: 300px;
+    word-break: break-word;
+    overflow-y: scroll;
+  }
+  #recovery-hint, #recovery-hint a {
+    color: #fcc;
+  }
+</style>
+
+<div id='cen' style='position: relative; left: 20%; width: 60%'>
+  <div style='display: inline-block; margin: 0; width: 15%; margin-bottom: 12px'>Token</div><!--
+  --><div style='display: inline-block; margin: 0; padding: 0; width: 85%'>
+    <input id='input-token'></input>
+  </div>
+  <br>
+  <button id='btn-start' style='margin-bottom: 18px'>开始</button>
+  <button id='btn-download' style='margin-bottom: 18px; display: none'>下载</button>
+  <br>
+  <div id='recovery-hint' style='display: none'>若中途出现问题（如被限流、服务器崩溃等），请保存自己的 token 并关注 <a href='https://hole.botany.run/recovery'>hole.botany.run/recovery</a>，完成抓取的数据将在后续放出。另外也可以<a href='https://github.com/kawa-yoiko/treasure-hole/'>通过 GitHub 联系</a>~</div>
+  <br>
+  <div id='log' style='display: none'>
+  </div>
+</div>
+
+<script>
+const btnStart = document.getElementById('btn-start');
+const btnDownload = document.getElementById('btn-download');
+const recoveryHint = document.getElementById('recovery-hint');
+
+let downloadLink = null;
+
+btnStart.addEventListener('click', (e) => {
+  const token = document.getElementById('input-token').value.trim();
+  const logEl = document.getElementById('log');
+  logEl.style.display = 'block';
+  btnStart.disabled = true;
+  recoveryHint.style.display = 'none';
+
+  fetch(`/request/${token}`, { method: 'POST' })
+    .then(response => response.text())
+    .then(text => {
+      const id = text;
+      const updateLog = () => {
+        fetch(`/log/${id}`).then(response => response.json())
+          .then(obj => {
+            console.log(obj);
+            logEl.innerText = obj.log.join('\n');
+            if (!obj.fin) {
+              setTimeout(updateLog, 1000);
+            } else {
+              if (obj.log[0] === '完成') {
+                console.log('success!');
+                downloadLink = `/download/${id}`;
+                btnStart.style.display = 'none';
+                btnDownload.style.display = 'unset';
+              } else {
+                console.log('did not finish');
+                // recoveryHint.style.display = 'block';
+              }
+              btnStart.disabled = false;
+            }
+          });
+      };
+      updateLog();
+    });
+});
+
+btnDownload.addEventListener('click', (e) => {
+  window.open(downloadLink);
+});
+</script>
+</body>
