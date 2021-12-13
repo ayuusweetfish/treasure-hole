@@ -18,6 +18,19 @@ const downloads = staticFiles('./data', {
 // id => { log };
 const ctx = {};
 
+const retryRun = async (opts) => {
+  while (true) {
+    try {
+      const proc = Deno.run(opts);
+      return proc;
+    } catch (ex) {
+      console.log(`Arranging for retry: ${opts.cmd}`);
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+      continue;
+    }
+  }
+}
+
 const handler = async (req) => {
   const method = req.method;
   const path = new URL(req.url).pathname;
@@ -51,7 +64,7 @@ const handler = async (req) => {
         `./data/${id}`,
         PROXY,
       ];
-      const proc = Deno.run({
+      const proc = await retryRun({
         cmd,
         stdout: 'null',
         stderr: 'piped',
@@ -81,7 +94,7 @@ const handler = async (req) => {
       if (log[0] === '完成') {
         log.splice(0, 0, '压缩中\n======');
         // Compress
-        const proc = Deno.run({
+        const proc = await retryRun({
           cwd: './data',
           cmd: ['zip', id, '-r', id],
           stdout: 'null',
@@ -93,7 +106,7 @@ const handler = async (req) => {
         } else {
           log.splice(0, 0, '完成');
         }
-        const rmProc = Deno.run({
+        const rmProc = await retryRun({
           cmd: ['rm', '-rf', `./data/${id}`],
           stdout: 'null',
           stderr: 'null',
